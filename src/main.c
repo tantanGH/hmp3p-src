@@ -89,7 +89,7 @@ static void abort_application() {
 //
 //  get mpu type
 //
-int32_t get_mpu_type() {
+static int32_t get_mpu_type() {
 
   int32_t mpu_type = 0;
 
