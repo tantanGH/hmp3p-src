@@ -117,7 +117,7 @@ static void show_help_message() {
   printf("options:\n");
   printf("     -v[n] ... volume (1-15, default:6)\n");
   printf("     -l[n] ... loop count (none:endless, default:1)\n");
-  printf("     -q[n] ... mp3 quality (0:high, 1:normal, default:1)\n");
+  printf("     -q[n] ... mp3 quality (0:high, 1:normal, default:0)\n");
   printf("     -b<n> ... buffer size [x 64KB] (3-32,default:6)\n");
   printf("     -s    ... use main memory for file reading (SCSI disk)\n");
   printf("     -h    ... show help message\n");
