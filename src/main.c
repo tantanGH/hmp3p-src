@@ -439,10 +439,12 @@ try:
                         pcm_freq == 24000 && pcm_channels == 1 ? 0x0b :
                         pcm_freq == 32000 && pcm_channels == 1 ? 0x0c :
                         pcm_freq == 44100 && pcm_channels == 1 ? 0x0d :
+                        pcm_freq == 48000 && pcm_channels == 1 ? 0x0e :
                         pcm_freq == 22050 && pcm_channels == 2 ? 0x1a :
                         pcm_freq == 24000 && pcm_channels == 2 ? 0x1b :
                         pcm_freq == 32000 && pcm_channels == 2 ? 0x1c :
-                        pcm_freq == 44100 && pcm_channels == 2 ? 0x1d : 0x1d;
+                        pcm_freq == 44100 && pcm_channels == 2 ? 0x1d : 
+                        pcm_freq == 48000 && pcm_channels == 2 ? 0x1e : 0x1d;
   uint32_t pcm8pp_channel_mode = ( pcm8pp_volume << 16 ) | ( pcm8pp_freq << 8 ) | pcm8pp_pan;
   pcm8pp_play_ex_linked_array_chain(0, pcm8pp_channel_mode, 1, pcm_freq * 256, g_init_chain_table);
 
