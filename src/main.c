@@ -315,7 +315,8 @@ try:
     // direct load to high memory from VDISK/WindrvXM
     size_t read_len = 0; 
     do {
-      size_t len = fread(fread_buffer, 1, FREAD_CHUNK_BYTES, fp);
+      size_t read_size = (mp3_data_size - read_len) < FREAD_CHUNK_BYTES ? (mp3_data_size - read_len) : FREAD_CHUNK_BYTES;
+      size_t len = fread(fread_buffer + read_len, 1, read_size, fp);
       read_len += len;
     } while (read_len < mp3_data_size);
   }

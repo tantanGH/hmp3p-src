@@ -165,6 +165,7 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, FILE* fp) {
     uint32_t frame_size = (id3v2_version == 0x03) ? *((uint32_t*)(frame_header + 4)) :
                             ((frame_header[4] & 0x7f) << 21) | ((frame_header[5] & 0x7f) << 14) |
                             ((frame_header[6] & 0x7f) << 7)  |  (frame_header[7] & 0x7f);    
+    if (frame_size < 4) break;
 
     if (memcmp(frame_header, "0000", 4) < 0 || memcmp(frame_header, "ZZZZ", 4) > 0) {
 
