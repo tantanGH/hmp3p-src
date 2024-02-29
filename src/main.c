@@ -566,14 +566,14 @@ try:
 
 catch:
 
-  // dummy wait to make sure DMAC stop (200 msec)
-  for (int32_t t0 = ONTIME(); ONTIME() < t0 + 20;) {}
-
   // stop pcm8pp
   pcm8pp_pause();
   pcm8pp_stop();
 
-  // close input file if stil opened
+  // dummy wait to make sure DMAC stop (200 msec)
+  for (int32_t t0 = ONTIME(); ONTIME() < t0 + 20;) {}
+
+  // close input file if still opened
   if (fp != NULL) {
     fclose(fp);
     fp = NULL;
