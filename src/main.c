@@ -99,7 +99,7 @@ static void abort_application() {
   // flush key buffer
   KFLUSHIO(0xff);
 
-  printf("aborted.\n");
+  printf("Aborted.\n");
 
   exit(1);
 }
@@ -787,6 +787,10 @@ catch:
   }
 
   // reclaim file read buffers
+  if (fread_staging_buffer != NULL) {
+    himem_free(fread_staging_buffer, 1);
+    fread_staging_buffer = NULL;
+  }
   if (fread_buffer != NULL) {
     himem_free(fread_buffer, use_high_memory);
     fread_buffer = NULL;
