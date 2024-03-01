@@ -28,7 +28,7 @@ TARGET_FILE = HMP3P.X
 DOCUMENT_FILE = HMP3P.DOC
 
 # Distribution package 
-PACKAGE_FILE = ../HMP3P022.ZIP
+PACKAGE_FILE = ../HMP3P023.ZIP
 
 # ヘッダ検索パス
 INCLUDE_FLAGS = -I${XDEV68K_DIR}/include/xc -I${XDEV68K_DIR}/include/xdev68k -I${LIBMAD_DIR}
@@ -39,13 +39,13 @@ CFLAGS = $(COMMON_FLAGS) -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall
     -fexec-charset=cp932 -fverbose-asm -fno-defer-pop
 
 # *.c ソースファイル
-C_SRCS = himem.c pcm8pp.c mp3_decode.c main.c
+C_SRCS = himem.c pcm8a.c pcm8pp.c mp3_decode.c main.c
 
 # *.s ソースファイル
 ASM_SRCS = utf16_cp932.s cp932rsc.s
 
 # *.h source files
-HEADER_SRCS = utf16_cp932.h cp932rsc.h himem.h pcm8pp.h mp3_decode.h hmp3p.h
+HEADER_SRCS = utf16_cp932.h cp932rsc.h himem.h pcm8a.h pcm8pp.h mp3_decode.h hmp3p.h
 
 # リンク対象のライブラリファイル
 LIBS =\
