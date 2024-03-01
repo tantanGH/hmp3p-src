@@ -27,6 +27,7 @@ static inline int16_t scale_16bit(mad_fixed_t sample) {
 //  inline helper: 24bit signed int to 12bit signed int
 //
 static inline int16_t scale_12bit(mad_fixed_t sample) {
+
   // round
   sample += (1L << (MAD_F_FRACBITS - 12));
 
@@ -340,9 +341,9 @@ exit:
 }
 
 //
-//  decode MP3 stream with resampling for PCM8A
+//  decode MP3 stream with resampling
 //
-int32_t mp3_decode_resample(MP3_DECODE_HANDLE* decode, int16_t* resample_buffer, size_t resample_buffer_len, int16_t resample_freq, size_t* resampled_len) {
+int32_t mp3_decode_resample(MP3_DECODE_HANDLE* decode, int16_t* resample_buffer, size_t resample_buffer_bytes, int16_t resample_freq, size_t* resampled_bytes) {
 
   // default return code
   int32_t rc = -1;
@@ -376,14 +377,12 @@ int32_t mp3_decode_resample(MP3_DECODE_HANDLE* decode, int16_t* resample_buffer,
       if (decode->mp3_sample_rate < 0) {
         decode->mp3_sample_rate = decode->current_mad_pcm->samplerate;
         decode->mp3_channels = decode->current_mad_pcm->channels;
-//        printf("MP3 frequency : %d\n", decode->mp3_sample_rate);
-//        printf("MP3 channels  : %s\n", decode->mp3_channels == 1 ? "mono" : "stereo");
       }
 
     } 
 
     MAD_PCM* pcm = decode->current_mad_pcm;
-    if (resample_ofs + pcm->length > resample_buffer_len) {
+    if (resample_ofs * sizeof(int16_t) + ( pcm->length * 2 * pcm->channels ) > resample_buffer_bytes) {
       // no more buffer space to write
       break;
     }
@@ -431,7 +430,7 @@ int32_t mp3_decode_resample(MP3_DECODE_HANDLE* decode, int16_t* resample_buffer,
 exit:
 
   // push resampled count
-  *resampled_len = resample_ofs;
+  *resampled_bytes = resample_ofs * sizeof(int16_t);
 
   return rc;
 }
