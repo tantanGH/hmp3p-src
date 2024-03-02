@@ -6,11 +6,11 @@ HMP3P is using the below great libraries:
  - picojpeg (public domin)
  - libmad (GPL2)
 
---
+---
 
 picojpeg - Public domain, Rich Geldreich <richgel99@gmail.com>
 
---
+---
 
  libmad - MPEG audio decoder library
  Copyright (C) 2000-2004 Underbit Technologies, Inc.
