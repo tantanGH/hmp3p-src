@@ -3,6 +3,7 @@
 #include <string.h>
 #include "himem.h"
 #include "utf16_cp932.h"
+#include "jpeg_decode.h"
 #include "mp3_decode.h"
 
 //
@@ -118,7 +119,7 @@ static void convert_utf16_to_cp932(uint8_t* cp932_buffer, uint8_t* utf16_buffer,
 //
 //  parse ID3v2 tags
 //
-int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, FILE* fp) {
+int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness, int16_t pic_half_size, FILE* fp) {
 
   // read the first 10 bytes of the MP3 file
   uint8_t mp3_header[10];
@@ -166,7 +167,13 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, FILE* fp) {
     uint32_t frame_size = (id3v2_version == 0x03) ? *((uint32_t*)(frame_header + 4)) :
                             ((frame_header[4] & 0x7f) << 21) | ((frame_header[5] & 0x7f) << 14) |
                             ((frame_header[6] & 0x7f) << 7)  |  (frame_header[7] & 0x7f);    
-    if (frame_size < 4) break;
+
+    //uint8_t tag_key[5];
+    //memcpy(tag_key, frame_header, 4);
+    //tag_key[4] = '\0';
+    //printf("%s (%d)\n", tag_key, frame_size);
+    
+    //if ((ofs + frame_size) > total_tag_size) break;
 
     if (memcmp(frame_header, "0000", 4) < 0 || memcmp(frame_header, "ZZZZ", 4) > 0) {
 
@@ -186,7 +193,7 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, FILE* fp) {
       }   
       himem_free(frame_data, 0);
 
-    } else if (memcmp(frame_header, "TPE1", 4) == 0) {
+    } else if (memcmp(frame_header, "TPE1", 4) == 0 && frame_size >= 4) {
 
       // artist
       uint8_t* frame_data = himem_malloc(frame_size, 0);
@@ -214,6 +221,39 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, FILE* fp) {
         decode->mp3_album[0] = '\0';
         convert_utf16_to_cp932(decode->mp3_album, frame_data + 1, frame_size - 1);
       }
+      himem_free(frame_data, 0);
+
+    } else if (pic_brightness > 0 && memcmp(frame_header, "APIC", 4) == 0) {
+
+//      printf("found APIC.\n");
+
+      // album art
+      uint8_t* frame_data = himem_malloc(frame_size, 0);
+      fread(frame_data, 1, frame_size, fp);
+
+      uint8_t* mime = frame_data+1;
+      uint8_t* desc = mime + strlen(mime) + 1 + 1;
+      uint8_t* pic_data = desc + strlen(desc) + 1;
+      uint32_t pic_data_len = frame_size - (pic_data - frame_data);
+
+      if (pic_data[0] == 0xff && pic_data[1] == 0xd8) {
+//        printf("found JPEG.\n");
+        // jpeg
+        JPEG_DECODE_HANDLE jpeg_decode;
+        jpeg_decode_init(&jpeg_decode, pic_brightness, pic_half_size);
+        if (jpeg_decode_exec(&jpeg_decode, pic_data, pic_data_len) != 0) {
+//          printf("unsupported jpeg artwork format. (progressive JPEG?)\n");
+        }
+        jpeg_decode_close(&jpeg_decode);
+
+//      } else if (pic_data[0] == 0x89 && pic_data[1] == 0x50) {
+//        // png
+//        PNG_DECODE_HANDLE png = { 0 };
+//        png_init(&png, pic_brightness, pic_half_size);
+//        png_load(&png, pic_data, pic_data_len);
+//        png_close(&png);
+      }
+
       himem_free(frame_data, 0);
 
     } else {
