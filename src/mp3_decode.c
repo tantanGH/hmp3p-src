@@ -168,12 +168,12 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
                             ((frame_header[4] & 0x7f) << 21) | ((frame_header[5] & 0x7f) << 14) |
                             ((frame_header[6] & 0x7f) << 7)  |  (frame_header[7] & 0x7f);    
 
-//    uint8_t tag_key[5];
-//    memcpy(tag_key, frame_header, 4);
-//    tag_key[4] = '\0';
-//    printf("%s (%d)\n", tag_key, frame_size);
+    //uint8_t tag_key[5];
+    //memcpy(tag_key, frame_header, 4);
+    //tag_key[4] = '\0';
+    //printf("%s (%d)\n", tag_key, frame_size);
     
-    if ((ofs + frame_size) > total_tag_size) break;
+    //if ((ofs + frame_size) > total_tag_size) break;
 
     if (memcmp(frame_header, "0000", 4) < 0 || memcmp(frame_header, "ZZZZ", 4) > 0) {
 
@@ -193,7 +193,7 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
       }   
       himem_free(frame_data, 0);
 
-    } else if (memcmp(frame_header, "TPE1", 4) == 0) {
+    } else if (memcmp(frame_header, "TPE1", 4) == 0 && frame_size >= 4) {
 
       // artist
       uint8_t* frame_data = himem_malloc(frame_size, 0);
