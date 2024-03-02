@@ -9,6 +9,7 @@
 // devices
 #include "keyboard.h"
 #include "himem.h"
+#include "crtc.h"
 
 // resource
 #include "cp932rsc.h"
@@ -38,7 +39,7 @@ static CHAIN_TABLE_EX* g_init_chain_table_ex = NULL;
 //
 //  original function key mode preservation
 //
-//static int32_t g_funckey_mode = -1;
+static int32_t g_funckey_mode = -1;
 
 //
 //  original pcm8pp frequency mode
@@ -92,9 +93,9 @@ static void abort_application() {
   C_CURON();
 
   // funckey mode
-//  if (g_funckey_mode >= 0) {
-//    C_FNKMOD(g_funckey_mode);
-//  }
+  if (g_funckey_mode >= 0) {
+    C_FNKMOD(g_funckey_mode);
+  }
   
   // flush key buffer
   KFLUSHIO(0xff);
@@ -133,9 +134,10 @@ exit:
 static void show_help_message() {
   printf("usage: hmp3p [options] <input-file.mp3>\n");
   printf("options:\n");
-  printf("     -v[n] ... volume (1-15, default:6)\n");
   printf("     -l[n] ... loop count (none:endless, default:1)\n");
-  printf("     -q[n] ... mp3 quality (0:high, 1:normal, default:0)\n");
+  printf("     -v<n> ... volume (1-15, default:6)\n");
+  printf("     -q<n> ... mp3 quality (0:high, 1:normal, default:0)\n");
+  printf("     -t<n> ... album art display brightness (1-100, default:off)\n");
   printf("     -b<n> ... buffer size [x 64KB] (3-32,default:6)\n");
   printf("     -s    ... use main memory for file reading (SCSI disk)\n");
   printf("     -h    ... show help message\n");
@@ -147,9 +149,12 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   // default return code
   int32_t rc = 1;
 
-  // set abort vectors
+  // preserve abort vectors
   g_abort_vector1 = INTVCS(0xFFF1, (int8_t*)abort_application);
   g_abort_vector2 = INTVCS(0xFFF2, (int8_t*)abort_application);  
+
+  // preserve function key mode
+  g_funckey_mode = C_FNKMOD(-1);
 
   // credit
   printf("HMP3P.X - High Memory MP3 player for X680x0 + Mercury-UNIT version " VERSION " by tantan\n");
@@ -163,6 +168,7 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   int16_t use_high_memory = 0;
   int16_t playback_driver = DRIVER_NONE;
   int16_t staging_file_read = 0;
+  int16_t pic_brightness = 0;
 
   // total number of chains
   int32_t num_chains = 0;
@@ -202,6 +208,12 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
         }
       } else if (argv[i][1] == 's') {
         staging_file_read = 1;
+      } else if (argv[i][1] == 't') {
+        pic_brightness = atoi(argv[i]+2);
+        if (pic_brightness < 0 || pic_brightness > 100 || strlen(argv[i]) < 3) {
+          show_help_message();
+          goto exit;
+        }
       } else if (argv[i][1] == 'h') {
         show_help_message();
         goto exit;
@@ -267,10 +279,34 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   // cursor off
   C_CUROFF();
 
+  // enter supervisor mode if needed
+  if (pic_brightness > 0) {
+    B_SUPER(0);
+  }
+
   // display mp3 attribute at first play
   int16_t first_play = 1;
 
 loop:
+
+  // init crtc if album art is required
+  if (pic_brightness > 0) {
+
+    G_CLR_ON();
+    crtc_set_extra_mode(0);
+
+    C_FNKMOD(3);    // function key display off
+    C_CLS_AL();
+
+    TPALET2(4, 0x0001);
+    TPALET2(5, TPALET2(1,-1));
+    TPALET2(6, TPALET2(2,-1));
+    TPALET2(7, TPALET2(3,-1));
+
+    struct TXFILLPTR txfil = { 2, 0, 0, 768, 512, 0xffff };
+    TXFILL(&txfil);
+
+  }
 
   // current chain table entries
   CHAIN_TABLE* cur_chain_table = NULL;
@@ -299,12 +335,22 @@ try:
 
   // parse ID3v2 tags
   size_t skip_offset = 0;
-  int32_t ofs = mp3_decode_parse_tags(&mp3_decoder, fp);
+  int32_t ofs = mp3_decode_parse_tags(&mp3_decoder, pic_brightness, 0, fp);
   if (ofs < 0) {
     strcpy(error_mes, cp932rsc_id3tag_read_error);
     goto catch;
   }
   skip_offset = ofs;
+
+  // adjust scroll position
+  if (pic_brightness > 0) {
+    SCROLL(0, 512-128, 0);
+    SCROLL(1, 512-128, 0);
+    SCROLL(2, 512-128, 0);
+    SCROLL(3, 512-128, 0);
+    struct TXFILLPTR txfil = { 2, 128, 0, 512, 512, 0x0000 };
+    TXFILL(&txfil);
+  }
 
   // obtain data content size
   fseek(fp, 0, SEEK_END);
@@ -356,7 +402,7 @@ try:
   }
 
   // describe mp3 attributes
-  if (first_play) {
+  if (first_play || pic_brightness > 0) {
 
     printf("\n");
 
@@ -839,13 +885,33 @@ catch:
 
 exit:
 
+  // screen clear
+  if (pic_brightness > 0) {
+
+    SCROLL(0, 0, 0);
+    SCROLL(1, 0, 0);
+    SCROLL(2, 0, 0);
+    SCROLL(3, 0, 0);
+
+    struct TXFILLPTR txfil = { 2, 0, 0, 768, 512, 0x0000 };
+    TXFILL(&txfil);
+
+    TPALET2(4,-2);
+    TPALET2(5,-2);
+    TPALET2(6,-2);
+    TPALET2(7,-2);
+
+    C_CLS_AL();
+    G_CLR_ON();
+  }
+
   // cursor on
   C_CURON();
 
   // function key mode
-//  if (g_funckey_mode >= 0) {
-//    C_FNKMOD(g_funckey_mode);
-//  }
+  if (g_funckey_mode >= 0) {
+    C_FNKMOD(g_funckey_mode);
+  }
 
   // resume abort vectors
   INTVCS(0xFFF1, (int8_t*)g_abort_vector1);
