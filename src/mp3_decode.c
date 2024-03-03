@@ -85,12 +85,15 @@ void mp3_decode_close(MP3_DECODE_HANDLE* decode) {
 
   if (decode->mp3_title != NULL) {
     himem_free(decode->mp3_title, 0);
+    decode->mp3_title = NULL;
   }
   if (decode->mp3_artist != NULL) {
     himem_free(decode->mp3_artist, 0);
+    decode->mp3_artist = NULL;
   }
   if (decode->mp3_album != NULL) {
     himem_free(decode->mp3_album, 0);
+    decode->mp3_album = NULL;
   }
 
 }
