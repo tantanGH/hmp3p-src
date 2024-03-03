@@ -135,10 +135,11 @@ static void show_help_message() {
   printf("usage: hmp3p [options] <input-file.mp3>\n");
   printf("options:\n");
   printf("     -l[n] ... loop count (none:endless, default:1)\n");
-  printf("     -v<n> ... volume (1-15, default:6)\n");
+  printf("     -v<n> ... volume (1-15, default:%d)\n", DEFAULT_VOLUME);
   printf("     -q<n> ... mp3 quality (0:high, 1:normal, default:0)\n");
   printf("     -t<n> ... album art display brightness (1-100, default:off)\n");
-  printf("     -b<n> ... buffer size [x 64KB] (3-32,default:6)\n");
+  printf("     -b<n> ... buffer size [x 64KB] (3-32,default:%d)\n", DEFAULT_BUFFERS);
+  printf("     -n    ... no progress bar\n");
   printf("     -s    ... use main memory for file reading (SCSI disk)\n");
   printf("     -h    ... show help message\n");
 }
@@ -161,14 +162,15 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
 
   // parse command line options
   uint8_t* mp3_file_name = NULL;
-  int16_t playback_volume = 6;
+  int16_t playback_volume = DEFAULT_VOLUME;
   int16_t loop_count = 1;
   int16_t mp3_quality = 0;
-  int16_t num_buffers = 6;
+  int16_t num_buffers = DEFAULT_BUFFERS;
   int16_t use_high_memory = 0;
   int16_t playback_driver = DRIVER_NONE;
   int16_t staging_file_read = 0;
   int16_t pic_brightness = 0;
+  int16_t quiet_mode = 0;
 
   // total number of chains
   int32_t num_chains = 0;
@@ -208,6 +210,8 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
         }
       } else if (argv[i][1] == 's') {
         staging_file_read = 1;
+      } else if (argv[i][1] == 'n') {
+        quiet_mode = 1;
       } else if (argv[i][1] == 't') {
         pic_brightness = atoi(argv[i]+2);
         if (pic_brightness < 0 || pic_brightness > 100 || strlen(argv[i]) < 3) {
@@ -687,7 +691,7 @@ try:
         // end of mp3?
         if (decoded_bytes == 0) {
           end_flag = 1;
-          B_PRINT("|");
+          if (!quiet_mode) B_PRINT("|");
           continue;
         }
 
@@ -717,9 +721,9 @@ try:
 
         int16_t dt = num_chains - block_counter;
         if (dt >= buffer_delta) {
-          B_PRINT(">");
+          if (!quiet_mode) B_PRINT(">");
         } else {
-          B_PRINT("*");
+          if (!quiet_mode) B_PRINT("*");
           buffer_delta = dt;
         }
 
@@ -763,7 +767,7 @@ try:
         // end of mp3?
         if (decoded_bytes == 0) {
           end_flag = 1;
-          B_PRINT("|");
+          if (!quiet_mode) B_PRINT("|");
           continue;
         }
 
@@ -780,9 +784,9 @@ try:
         // in case any buffered chain is consumed, display '*'. Otherwise display '.'.
         int16_t dt = num_chains - (block_counter_ofs + pcm8pp_get_block_counter(0));
         if (dt >= buffer_delta) {
-          B_PRINT(">");
+          if (!quiet_mode) B_PRINT(">");
         } else {
-          B_PRINT("*");
+          if (!quiet_mode) B_PRINT("*");
           buffer_delta = dt;
         }
 

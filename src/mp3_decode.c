@@ -160,7 +160,7 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
 
   //printf("total tag size = %d\n",total_tag_size);
 
-  while (ofs < total_tag_size) {
+  while ((ofs + 10) < total_tag_size) {
 
     fread(frame_header, 1, 10, fp);
 
@@ -185,12 +185,14 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
       uint8_t* frame_data = himem_malloc(frame_size, 0);
       fread(frame_data, 1, frame_size, fp);
       if (frame_data[0] == 0x00) {              // ISO-8859-1
-        decode->mp3_title = frame_data + 1;
+        decode->mp3_title = himem_malloc(frame_size - 1 + 1, 0);
+        memcpy(decode->mp3_title, frame_data + 1, frame_size - 1);
+        decode->mp3_title[frame_size - 1] = '\0';
       } else if (frame_data[0] == 0x01) {       // UTF-16 with BOM
         decode->mp3_title = himem_malloc(frame_size - 3 + 1, 0);
         decode->mp3_title[0] = '\0';
         convert_utf16_to_cp932(decode->mp3_title, frame_data + 1, frame_size - 1);
-      }   
+      }
       himem_free(frame_data, 0);
 
     } else if (memcmp(frame_header, "TPE1", 4) == 0 && frame_size >= 4) {
@@ -200,7 +202,9 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
       fread(frame_data, 1, frame_size, fp);
 
       if (frame_data[0] == 0x00) {              // ISO-8859-1
-        decode->mp3_artist = frame_data + 1;
+        decode->mp3_artist = himem_malloc(frame_size - 1 + 1, 0);
+        memcpy(decode->mp3_artist, frame_data + 1, frame_size - 1);
+        decode->mp3_artist[frame_size - 1] = '\0';
       } else if (frame_data[0] == 0x01) {       // UTF-16 with BOM
         decode->mp3_artist = himem_malloc(frame_size - 3 + 1, 0);
         decode->mp3_artist[0] = '\0';
@@ -215,7 +219,9 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
       fread(frame_data, 1, frame_size, fp);
 
       if (frame_data[0] == 0x00) {              // ISO-8859-1
-        decode->mp3_album = frame_data + 1;
+        decode->mp3_album = himem_malloc(frame_size - 1 + 1, 0);
+        memcpy(decode->mp3_album, frame_data + 1, frame_size - 1);
+        decode->mp3_album[frame_size - 1] = '\0';
       } else if (frame_data[0] == 0x01) {       // UTF-16 with BOM
         decode->mp3_album = himem_malloc(frame_size - 3 + 1, 0);
         decode->mp3_album[0] = '\0';
