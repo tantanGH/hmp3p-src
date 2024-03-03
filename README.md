@@ -2,7 +2,7 @@
 
 HMP3P source code tree
 
-HMP3P is using the below great libraries:
+HMP3P is using the below awesome libraries:
  - picojpeg (public domin)
  - libmad (GPL2)
 

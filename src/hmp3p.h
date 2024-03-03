@@ -1,7 +1,7 @@
 #ifndef __H_HMP3P__
 #define __H_HMP3P__
 
-#define VERSION "0.2.4 (2024/03/02)"
+#define VERSION "0.2.5 (2024/03/03)"
 
 #define MAX_PATH_LEN (256)
 
@@ -15,6 +15,9 @@
 #define DRIVER_NONE     (-1)
 #define DRIVER_PCM8A    (0)
 #define DRIVER_PCM8PP   (1)
+
+#define DEFAULT_VOLUME  (6)
+#define DEFAULT_BUFFERS (4)
 
 //
 //  link array chain table
