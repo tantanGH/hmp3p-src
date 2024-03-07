@@ -144,7 +144,9 @@ static void show_help_message() {
   printf("     -h    ... show help message\n");
 }
 
-// main
+//
+//  main
+//
 int32_t main(int32_t argc, uint8_t* argv[]) {
 
   // default return code
@@ -157,10 +159,7 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   // preserve function key mode
   g_funckey_mode = C_FNKMOD(-1);
 
-  // credit
-  printf("HMP3P.X - High Memory MP3 player for X680x0 + Mercury-UNIT version " VERSION " by tantan\n");
-
-  // parse command line options
+  // command line options
   uint8_t* mp3_file_name = NULL;
   int16_t playback_volume = DEFAULT_VOLUME;
   int16_t loop_count = 1;
@@ -269,6 +268,11 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
       strcpy(error_mes, cp932rsc_half_rate_mercury35);
       goto exit;
     }
+  }
+
+  // credit
+  if (pic_brightness == 0) {
+    printf("HMP3P.X - High Memory MP3 player for X680x0 + Mercury-UNIT version " VERSION " by tantan\n");
   }
 
   // reset PCM8A/PCM8PP
@@ -473,6 +477,8 @@ try:
 
       // end of mp3?
       if (decoded_bytes == 0) {
+        himem_free(ct->buffer, use_high_memory);
+        himem_free(ct, use_high_memory);
         end_flag = 1;
         break;
       }
@@ -525,6 +531,8 @@ try:
 
       // end of mp3?
       if (decoded_bytes == 0) {
+        himem_free(ct->buffer, use_high_memory);
+        himem_free(ct, use_high_memory);
         end_flag = 1;
         break;
       }
@@ -690,6 +698,8 @@ try:
 
         // end of mp3?
         if (decoded_bytes == 0) {
+          himem_free(ct->buffer, use_high_memory);
+          himem_free(ct, use_high_memory);
           end_flag = 1;
           if (!quiet_mode) B_PRINT("|");
           continue;
@@ -766,6 +776,8 @@ try:
 
         // end of mp3?
         if (decoded_bytes == 0) {
+          himem_free(ct->buffer, use_high_memory);
+          himem_free(ct, use_high_memory);
           end_flag = 1;
           if (!quiet_mode) B_PRINT("|");
           continue;
