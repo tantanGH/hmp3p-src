@@ -132,6 +132,7 @@ exit:
 //  show help message
 //
 static void show_help_message() {
+  printf("HMP3P.X - High Memory MP3 player for X680x0 + Mercury-UNIT version " VERSION " by tantan\n");
   printf("usage: hmp3p [options] <input-file.mp3>\n");
   printf("options:\n");
   printf("     -l[n] ... loop count (none:endless, default:1)\n");
@@ -179,10 +180,10 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   error_mes[0] = '\0';
   
   // check mpu type
-  if (get_mpu_type() < 3) {
-    strcpy(error_mes, cp932rsc_mpu_type);
-    goto exit;
-  }
+//  if (get_mpu_type() < 3) {
+//    strcpy(error_mes, cp932rsc_mpu_type);
+//    goto exit;
+//  }
 
   // parse command line options
   for (int16_t i = 1; i < argc; i++) {
