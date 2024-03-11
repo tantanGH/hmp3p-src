@@ -1,7 +1,7 @@
 #ifndef __H_HMP3P__
 #define __H_HMP3P__
 
-#define VERSION "0.2.7 (2024/03/08)"
+#define VERSION "0.2.7 (2024/03/11)"
 
 #define MAX_PATH_LEN (256)
 

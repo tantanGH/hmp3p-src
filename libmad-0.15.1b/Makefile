@@ -17,35 +17,31 @@ GAS2HAS = perl ${XDEV68K_DIR}/util/x68k_gas2has.pl -cpu 68030 -inc doscall.inc -
 RUN68 = ${XDEV68K_DIR}/run68/run68x
 HAS = $(RUN68) ${XDEV68K_DIR}/x68k_bin/HAS060.X
 HLK = $(RUN68) ${XDEV68K_DIR}/x68k_bin/hlk.r
+AR = $(RUN68) ${XDEV68K_DIR}/x68k_bin/AR.X
 
-# libmad directory
-LIBMAD_DIR="../libmad-0.15.1b"
-
-# 実行ファイル名
-TARGET_FILE = HMP3P.X
-
-# Document file
-DOCUMENT_FILE = HMP3P.DOC
-
-# Distribution package 
-PACKAGE_FILE = ../HMP3P027.ZIP
+# 生成ライブラリファイル名
+TARGET_FILE = libmad.a
 
 # ヘッダ検索パス
-INCLUDE_FLAGS = -I${XDEV68K_DIR}/include/xc -I${XDEV68K_DIR}/include/xdev68k -I${LIBMAD_DIR}
+INCLUDE_FLAGS = -I${XDEV68K_DIR}/include/xc -I${XDEV68K_DIR}/include/xdev68k
 
 # コンパイルフラグ
 COMMON_FLAGS = -m68030 -O3 $(INCLUDE_FLAGS) -z-stack=8192
 CFLAGS = $(COMMON_FLAGS) -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall-used-a2 \
-    -fexec-charset=cp932 -fverbose-asm -fno-defer-pop
+    -fexec-charset=cp932 -fverbose-asm -fno-defer-pop -DFPM_DEFAULT -DOPT_SPEED -DXDEV68K
+
+#CFLAGS="${COMMON_FLAGS} -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall-used-a2 \
+#    -fexec-charset=cp932 -fverbose-asm -fno-defer-pop -DFPM_DEFAULT -D_TIME_T_DECLARED -D_CLOCK_T_DECLARED -Dwint_t=int \
+#		-DXDEV68K -DFPM_DEFAULT -DOPT_SPEED"
 
 # *.c ソースファイル
-C_SRCS = himem.c crtc.c pcm8a.c pcm8pp.c mp3_decode.c picojpeg.c jpeg_decode.c main.c
+C_SRCS = decoder.c fixed.c frame.c huffman.c layer3.c layer12.c stream.c synth.c timer.c version.c
 
 # *.s ソースファイル
-ASM_SRCS = utf16_cp932.s cp932rsc.s
+ASM_SRCS =
 
 # *.h source files
-HEADER_SRCS = utf16_cp932.h cp932rsc.h himem.h crtc.h pcm8a.h pcm8pp.h mp3_decode.h picojpeg.h jpeg_decode.h hmp3p.h
+HEADER_SRCS = decoder.h fixed.h frame.h huffman.h layer3.h layer12.h stream.h synth.h timer.h version.h mad.h
 
 # リンク対象のライブラリファイル
 LIBS =\
@@ -62,10 +58,9 @@ INTERMEDIATE_DIR = _build
 OBJS = $(addprefix $(INTERMEDIATE_DIR)/,$(patsubst %.c,%.o,$(C_SRCS))) \
 	$(addprefix $(INTERMEDIATE_DIR)/,$(patsubst %.s,%.o,$(ASM_SRCS))) 
 
-# オブジェクトファイル (libmad)
-OBJS2 = ${LIBMAD_DIR}/_build/*.o
+OBJS2 = $(patsubst %.c,%.o,$(C_SRCS)) $(patsubst %.s,%.o,$(ASM_SRCS))
 
-# HLK に入力するリンクリスト
+# AR に入力するリンクリスト
 HLK_LINK_LIST = $(INTERMEDIATE_DIR)/_lk_list.tmp
 
 # デフォルトのターゲット
@@ -83,16 +78,19 @@ clean :
 ${INTERMEDIATE_DIR}/$(TARGET_FILE) : $(OBJS)
 	mkdir -p $(INTERMEDIATE_DIR)
 	rm -f $(HLK_LINK_LIST)
-	@for FILENAME in $(OBJS) $(OBJS2); do\
+	@for FILENAME in $(OBJS2); do\
 		echo $$FILENAME >> $(HLK_LINK_LIST); \
         done
-	@for FILENAME in $(LIBS); do\
-		cp $$FILENAME $(INTERMEDIATE_DIR)/`basename $$FILENAME`; \
-		echo $(INTERMEDIATE_DIR)/`basename $$FILENAME` >> $(HLK_LINK_LIST); \
-        done
-	$(HLK) -x -i $(HLK_LINK_LIST) -o ${INTERMEDIATE_DIR}/$(TARGET_FILE)
+#	@for FILENAME in $(LIBS); do\
+#		cp $$FILENAME $(INTERMEDIATE_DIR)/`basename $$FILENAME`; \
+#		echo $(INTERMEDIATE_DIR)/`basename $$FILENAME` >> $(HLK_LINK_LIST); \
+#        done
+#	$(HLK) -x -i $(HLK_LINK_LIST) -o ${INTERMEDIATE_DIR}/$(TARGET_FILE)
 #	$(HLK) -i $(HLK_LINK_LIST) -o ${INTERMEDIATE_DIR}/$(TARGET_FILE)
-	rm -f tmp*.\$$\$$\$$
+	cd ${INTERMEDIATE_DIR}
+#	$(AR) /i $(HLK_LINK_LIST) $(TARGET_FILE)
+	$(AR) $(TARGET_FILE) $(OBJS2)
+	cd ..
 
 # *.c ソースのコンパイル
 $(INTERMEDIATE_DIR)/%.o : %.c Makefile $(HEADER_SRCS)
@@ -108,5 +106,3 @@ $(INTERMEDIATE_DIR)/%.o : %.s Makefile
 	iconv -t cp932 $*.s > $(INTERMEDIATE_DIR)/$*.has
 	$(HAS) -e -u -w0 $(INCLUDE_FLAGS) $(INTERMEDIATE_DIR)/$*.has -o $(INTERMEDIATE_DIR)/$*.o
 
-package:
-	zip -j ${PACKAGE_FILE} ${INTERMEDIATE_DIR}/${TARGET_FILE} ${DOCUMENT_FILE} 
