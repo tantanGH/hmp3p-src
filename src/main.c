@@ -180,10 +180,10 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   error_mes[0] = '\0';
   
   // check mpu type
-//  if (get_mpu_type() < 3) {
-//    strcpy(error_mes, cp932rsc_mpu_type);
-//    goto exit;
-//  }
+  if (get_mpu_type() < 3) {
+    strcpy(error_mes, cp932rsc_mpu_type);
+    goto exit;
+  }
 
   // parse command line options
   for (int16_t i = 1; i < argc; i++) {
