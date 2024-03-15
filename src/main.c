@@ -55,8 +55,15 @@ static void abort_application() {
   INTVCS(0xFFF1, (int8_t*)g_abort_vector1);
   INTVCS(0xFFF2, (int8_t*)g_abort_vector2);  
 
-  // resume pcm8pp settings
+  // stop pcm8a
+  if (pcm8a_isavailable()) {
+    pcm8a_pause();
+    pcm8a_stop();
+  }
+
+  // stop pcm8pp
   if (pcm8pp_isavailable()) {
+    pcm8pp_pause();
     pcm8pp_stop();
     pcm8pp_set_frequency_mode(g_original_pcm8pp_frequency_mode);
   }
@@ -851,7 +858,7 @@ catch:
 
   // reclaim file read buffers
   if (fread_staging_buffer != NULL) {
-    himem_free(fread_staging_buffer, 1);
+    himem_free(fread_staging_buffer, 0);
     fread_staging_buffer = NULL;
   }
   if (fread_buffer != NULL) {
