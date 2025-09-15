@@ -1,0 +1,486 @@
+
+_exit		equ	$ff00
+_inpout		equ	$ff06
+_inkey		equ	$ff07
+_print		equ	$ff09
+_intvcs		equ	$ff25
+_open		equ	$ff3d
+
+_close		equ	$ff3e
+_read		equ	$ff3f
+_exit2		equ	$ff4c
+_mfree		equ	$ff49
+_setblock	equ	$ff4a
+
+_ctrlcabort	equ	$fff1
+_errabort	equ	$fff2
+
+_ADPCMLOT	equ	$64
+_ADPCMSNS	equ	$66
+_ADPCMMOD	equ	$67
+_ONTIME		equ	$7f
+_B_WPEEK	equ	$83
+_B_LPEEK	equ	$84
+_B_BPOKE	equ	$86
+IOCS	macro	number
+	moveq.l	#number,d0
+	trap	#15
+	endm
+
+DOS	macro	callname
+	dc.w	callname
+	endm
+
+		.text
+
+start:
+
+*----- コマンドラインの解析 -----
+
+		addq.l	#1,a2
+
+com_lop
+
+		move.b	(a2)+,d0
+		beq	com_end			* コマンドライン終了
+
+		cmp.b	#'/',d0			* ｵﾌﾟｼｮﾝ ?
+		beq	com_switch
+com_ana_no_p
+		cmp.b	#'-',d0			* ｵﾌﾟｼｮﾝ ?
+		beq	com_switch
+
+		tst.b	fcount
+		bne	usage
+		add.b	#1,fcount
+
+		lea.l	filename,a1
+
+get_filename:
+
+		move.b	d0,(a1)+
+		move.b	(a2)+,d0
+		beq.b	com_end
+		cmp.b	#' ',d0
+		beq.b	com_lop
+		cmp.b	#9,d0
+		bne.b	get_filename
+		bra.b	com_end
+
+com_switch:
+
+		move.b	(a2)+,d0
+		and.b	#$df,d0
+		cmp.b	#'F',d0
+		bne	usage
+
+		bsr	num_read
+		tst.l	d1
+		blt	usage
+		cmp.w	#4,d0
+		bgt	usage
+		move.b	d0,freq
+		bra	com_lop
+
+com_end
+		tst.b	fcount
+		beq	usage			*ファイル名がないぞ〜
+
+*---- Ctrl-Cまたはプロセスのアボートベクタを変更する ----
+
+		pea.l	abort_process
+		move.w	#_ctrlcabort,-(sp)
+		DOS	_intvcs
+		addq.w	#6,sp
+
+		pea.l	abort_process
+		move.w	#_errabort,-(sp)
+		DOS	_intvcs
+		addq.w	#6,sp
+
+*----- メモリ確保 -----
+
+		pea.l	maxsize-start+$10000          ; バッファとして $10000 確保する
+		pea.l	$10(a0)
+		DOS	_setblock
+		addq.l	#8,sp
+		tst.l	d0
+		blt	no_mem
+
+*----- ファイルオープン -----
+
+		move.w	#$00,-(sp)	*読み込みオープン
+		pea.l	filename
+		DOS	_open
+		addq.w	#6,sp
+		tst.l	d0
+		blt	open_error
+
+		move.w	d0,handle
+
+*----- 再生スタート -----
+
+		pea.l	play_msg
+		DOS	_print
+		addq.w	#4,sp
+
+		pea.l	$8000                 ; 一度に $FF00 全部は読み込まず、約半分だけをまずは読む
+		pea.l	maxsize               ; buffer = アプリケーションの最終メモリアドレス+1 = SETBLOCK で確保した $10000 ワークメモリの先頭
+		move.w	handle,-(sp)
+		DOS	_read
+		lea.l	10(sp),sp
+		tst.l	d0
+		blt	read_error
+		beq	stop_end
+		cmp.l	#$8000,d0             ; $8000読めたならば
+		beq	play_go
+
+		move.w	d0,adpcm_link+4     ; データが$8000未満だったのでリンクチェインテーブル内のサイズを書き換える
+		clr.l	adpcm_link+4+2        ; next pointer を 0 にして終了扱いにする
+		bsr	adpcm_out
+		bsr	wait_keyin_adpcm
+		bra	stop_end
+
+play_go
+		bsr	adpcm_out               ; adpcm_outサブルーチンに飛んで、ADPCMMOD(0) および ADPCMLOT(adpcm_link) を実行する
+play_loop
+		pea.l	$8000
+		pea.l	maxsize+$8000         ; adpcm_link2 buffer = 前回読んだ buffer address + 0x8000 に、また $8000 だけ読んでみる
+		move.w	handle,-(sp)
+		DOS	_read
+		lea.l	10(sp),sp
+		tst.l	d0
+		blt	read_error
+		beq	last_wait
+		cmp.l	#$8000,d0
+		beq	play_loop_1             ; $8000 丸ごと読めたのであれば play_loop_1 へ
+
+		move.w	d0,adpcm_link2+4    ; 読めなかったのであれば今回で終了する (adpcm_link2)
+		clr.l	adpcm_link2+4+2
+		bsr	wait_keyin_adpcm
+		tst.l	d0
+		bne	stop_end
+		bra	last_wait
+
+play_loop_1
+
+		bsr	wait_keyin_adpcm
+		tst.l	d0
+		bne	stop_end
+
+		pea.l	$8000
+		pea.l	maxsize
+		move.w	handle,-(sp)
+		DOS	_read                       ; adpcm_link の方に $8000 読んでみる
+		lea.l	10(sp),sp
+		tst.l	d0
+		blt	read_error
+		beq	last_wait
+		cmp.l	#$8000,d0
+		beq	play_loop_2
+
+		move.w	d0,adpcm_link+4
+		clr.l	adpcm_link+4+2
+		bsr	wait_keyin_adpcm
+		tst.l	d0
+		bne	stop_end
+last_wait
+		bsr	wait_keyin_adpcm
+		tst.l	d0
+		bra	stop_end
+
+play_loop_2
+
+		bsr	wait_keyin_adpcm
+		tst.l	d0
+		beq	play_loop
+
+*----- 再生終了 -----
+
+stop_end
+
+		pea.l	end_msg
+
+*----- ファイルを閉じる -----
+
+close_end
+
+		bsr	adpcm_stop
+
+		lea.l	$e92003,a1
+		move.b	#$80,d0
+		IOCS	_B_BPOKE	*音量０
+
+		lea.l	$e92001,a1
+		move.b	#$2,d0
+		IOCS	_B_BPOKE	*ADPCM再生
+
+		IOCS	_ONTIME
+		move.l	d0,d2
+		add.l	#50,d2
+		cmp.l	#$83d5ff,d2
+		bls	wait_500ms
+
+		sub.l	#$83d5ff,d2
+
+wait_500ms
+		IOCS	_ONTIME
+		cmp.l	d0,d2
+		bne	wait_500ms
+
+		bsr	adpcm_stop
+
+		DOS	_print
+		addq.w	#4,sp
+		move.w	handle,-(sp)
+		DOS	_close
+		addq.w	#2,sp
+
+		clr.w	-(sp)
+		DOS	_exit2
+
+
+*--- 使い方の表示 ---
+
+usage:
+		pea.l	usage_msg
+		bra	print_exit
+
+*--- メモリが足りない ---
+
+no_mem:
+		pea.l	no_mem_msg
+		bra	print_exit
+
+*--- 読み込みに失敗 ---
+
+read_error:
+		pea.l	read_err_msg
+		bra	close_end
+
+*--- ファイルオープンに失敗 ---
+
+open_error:
+
+		pea.l	open_err_msg
+
+print_exit:
+		DOS	_print
+		addq.w	#4,sp
+		clr.w	-(sp)
+		DOS	_exit2
+*******************************************************
+*
+*	Ctrl-Cまたは処理を中断された場合の処理
+*
+*	input	none
+*	output	none
+*	break	d0.l,d1.l
+*******************************************************
+abort_process
+
+		bsr	adpcm_stop
+		pea.l	abort_msg
+		bra	print_exit
+
+*******************************************************
+*
+*	ＡＤＰＣＭ停止
+*
+*	input	none
+*	output	none
+*	break	d0.l,d1.l
+*******************************************************
+adpcm_stop
+
+		moveq.l	#0,d1
+		IOCS	_ADPCMMOD
+		rts
+
+*******************************************************
+*
+*	ＡＤＰＣＭ出力
+*
+*	input	none
+*	output	none
+*	break	d1.l,a1.l
+*******************************************************
+adpcm_out
+		moveq.l	#0,d1
+		IOCS	_ADPCMMOD
+
+		move.b	freq,d1
+		lsl.w	#8,d1
+		move.b	#3,d1
+		lea.l	adpcm_link,a1
+		IOCS	_ADPCMLOT
+
+		rts
+
+*******************************************************
+*
+*	キー入力待ちと録音終了待ち
+*
+*	input	none
+*	output	d0.l.....0)32KB再生終了 1)キー入力有り
+*		d1.l.....d0.lが１のときキー入力があった時点での取り込みバイト数
+*	break	d1.l,d2.l
+*******************************************************
+wait_keyin_adpcm
+
+		lea.l	$e840c0+$1c,a1                  ; DMAC CH3 BAR
+		IOCS	_B_LPEEK
+		move.l	d0,d2
+
+wait_keyin_adpcm_1
+
+		lea.l	$e840c0+$1c,a1                  ; DMAC CH3 BAR
+		IOCS	_B_LPEEK
+		cmp.l	d0,d2
+		bne	wait_keyin_adpcm_rec_end
+
+		IOCS	_ADPCMSNS
+		tst.l	d0
+		beq	wait_keyin_adpcm_rec_end
+
+
+
+		move.w	#$00ff,-(sp)
+		DOS	_inpout
+		addq.w	#2,sp
+		tst.l	d0
+		beq.b	wait_keyin_adpcm_1
+
+		cmp.b	#' ',d0
+		beq	wait_keyin_adpcm_pause		*スペースキーなら一時停止処理
+		cmp.b	#$1b,d0
+		bne	wait_keyin_adpcm_1
+
+wait_keyin_adpcm_stop
+
+		lea.l	$e840c0+$0a,a1			*ＥＳＣキーなら終了
+		IOCS	_B_WPEEK
+		move.l	#$8000,d1
+		sub.w	d0,d1
+		moveq.l	#1,d0
+		rts
+
+wait_keyin_adpcm_rec_end
+
+		clr.l	d0
+		rts
+
+wait_keyin_adpcm_pause
+
+		moveq.l	#1,d1
+		IOCS	_ADPCMMOD
+
+		lea.l	$e92003,a1
+		move.b	#$80,d0
+		IOCS	_B_BPOKE
+
+		pea.l	pause_msg
+		DOS	_print
+		addq.w	#4,sp
+
+wait_keyin_adpcm_pause_1
+
+		DOS	_inkey
+		cmp.b	#$1b,d0				*リターンキーなら終了
+		beq	wait_keyin_adpcm_stop
+		cmp.b	#' ',d0
+		bne	wait_keyin_adpcm_pause_1
+
+		moveq.l	#2,d1
+		IOCS	_ADPCMMOD
+
+		pea.l	play_msg
+		DOS	_print
+		addq.w	#4,sp
+
+		bra	wait_keyin_adpcm_1
+
+*********************************************************************
+*
+*		数字の読み込み
+*
+*	input	a2...string address
+*	output	d0.w....read value
+*		d1.l....0)no error -1)error
+*
+*
+*	break	d1,d2,d3,a0
+*********************************************************************
+num_read
+		move.b	(a2),d1
+		cmp.b	#'0',d1
+		bcs	num_read_error
+		cmp.b	#'9',d1
+		bhi	num_read_error
+		clr.w	d0
+num_read0
+		clr.w	d1
+		move.b	(a2),d1
+		beq	num_read_end
+		cmp.b	#' ',d1
+		beq	num_read_end
+		cmp.b	#9,d1
+		beq	num_read_end
+		sub.b	#'0',d1
+		cmp.b	#10,d1
+		bcc.b	num_read_error
+		addq.w	#1,a2
+		mulu.w	#10,d0
+		cmp.l	#65535,d0
+		bhi	num_read_error
+		add.w	d1,d0
+		bra.b	num_read0
+num_read_end
+		moveq.l	#0,d1
+		rts
+num_read_error
+		moveq.l	#-1,d1
+		rts
+
+
+
+
+adpcm_link	dc.l	maxsize
+		dc.w	$8000
+		dc.l	adpcm_link2
+
+adpcm_link2	dc.l	maxsize+$8000
+		dc.w	$8000
+		dc.l	adpcm_link
+
+red_byte	dc.w	0
+handle		dc.w	0
+
+freq		dc.b	4
+fcount		dc.b	0
+filename	ds.b	128
+
+usage_msg	dc.b	'ＡＤＰＣＭプレイヤー V1.01 by 藤原 尚伸 1993/7/17',13,10,10
+		dc.b	' 使い方：ADPCMPLAY [スイッチ] [ファイル名]',13,10,10
+		dc.b	'  [スイッチ]',13,10
+		dc.b	'        /Fn......サンプリング周波数',13,10
+		dc.b	'                      n= 0: 3.9KHz',13,10
+		dc.b	'                         1: 5.2KHz',13,10
+		dc.b	'                         2: 7.8KHz',13,10
+		dc.b	'                         3:10.4KHz',13,10
+		dc.b	'                         4:15.6KHz (デフォルト)',13,10,10
+		dc.b	'  [ファイル名]',13,10
+		dc.b	'        再生するファイル名',13,10,10
+		dc.b	0
+
+no_mem_msg	dc.b	'	メモリーが足りません',13,10,0
+open_err_msg	dc.b	'	ファイルオープンに失敗しました',13,10,0
+read_err_msg	dc.b	13,10,'	読み込みエラーです（なんでか知らんけど）',13,10,0
+abort_msg	dc.b	13,10,' 録音を中断します',13,10,0
+play_msg	dc.b	13,'●再生中です（一時停止：スペースキー　終了：ＥＳＣキー）●',0
+pause_msg	dc.b	13,'■一時停止中です（再開：スペースキー　終了：ＥＳＣキー）■',0
+end_msg		dc.b	13,'▲再生を終了しました▲                                      ',13,10,0
+maxsize:
+
+		end	start
+

@@ -1,0 +1,51 @@
+┌─────────────────────────────────────┐
+│                     16bit PCM driver for Mercury-Unit                    │
+│              version 0.88 Copyright 1994-1999 by BEL./nenetto            │
+└─────────────────────────────────────┘
+
+☆ Mercury-Unit v2 以降用のデバイスドライバ
+
+        ドライバ登録時にMercury-Unitの初期化を行ないます。
+        16bit PCM DATA が'Mercury-Unit'を使用して再生する事ができます。
+        Mercury IOCS が拡張されます。（別ファイルにて詳しく説明）
+        従来の IOCSをフックして，過去資産のソフトを生かせます。
+
+        まーきゅりーゆにっとに対応し，FM音源の処理系も追加しました。
+
+☆ Device Name
+
+        正常に登録が完了すると以下のデバイス名が使用できるようになります。
+
+        DeviceName      Mode   Frequency
+
+        S32             Stereo  32KHz
+        S44             Stereo  44.1KHz
+        S48             Stereo  48KHz
+
+        M32             monoral 32KHz
+        M44             monoral 44.1KHz
+        M48             monoral 48KHz
+
+───────────────────────────────────────
+☆ 許諾
+
+        本アーカイブの内容は BEL.と nenettoに著作があるものとします。
+
+        まったくもって無保証です。
+        本プログラム使用した(しない)場合における障害は私の感知する所ではあり
+        ません。
+
+───────────────────────────────────────
+☆謝辞
+        以下のソフトウェアを使用して作成されました。
+
+develop)
+[mint]   Madoka INTerpreter  2.29.1
+                        Thule/ippoh/TEAM NAIL/AKT/K.kirah/Chaola/BEL./Leaza
+[em]     μEmacs ver3.10-J1.43 (rel.5c6) icam/homy/salt/peace/shuna/rima/sharl.
+[HAS060] X68k High-speed Assembler v3.09+85 Copyright 1990-94/96-99 Y.Nakamura/M.Kamada
+[LK]     X68k Linker v3.00 Copyright 1987,88,89,90,91,92,93 SHARP/Hudson 
+
+hardware)
+X68030
+まーきゅりーゆにっと V4
