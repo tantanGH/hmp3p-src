@@ -22,13 +22,13 @@ HLK = $(RUN68) ${XDEV68K_DIR}/x68k_bin/hlk.r
 LIBMAD_DIR="../libmad-0.15.1b"
 
 # 実行ファイル名
-TARGET_FILE = HMP3P.X
+TARGET_FILE = HMP3P030.X
 
 # Document file
 DOCUMENT_FILE = HMP3P.DOC
 
 # Distribution package 
-PACKAGE_FILE = ../HMP3P027.ZIP
+PACKAGE_FILE = ../HMP3P030.ZIP
 
 # ヘッダ検索パス
 INCLUDE_FLAGS = -I${XDEV68K_DIR}/include/xc -I${XDEV68K_DIR}/include/xdev68k -I${LIBMAD_DIR}
@@ -56,14 +56,14 @@ LIBS =\
 	${XDEV68K_DIR}/lib/m68k_elf/m68000/libgcc.a
 
 # 中間ファイル生成用ディレクトリ
-INTERMEDIATE_DIR = _build
+INTERMEDIATE_DIR = _build030
 
 # オブジェクトファイル
 OBJS = $(addprefix $(INTERMEDIATE_DIR)/,$(patsubst %.c,%.o,$(C_SRCS))) \
 	$(addprefix $(INTERMEDIATE_DIR)/,$(patsubst %.s,%.o,$(ASM_SRCS))) 
 
 # オブジェクトファイル (libmad)
-OBJS2 = ${LIBMAD_DIR}/_build/*.o
+OBJS2 = ${LIBMAD_DIR}/${INTERMEDIATE_DIR}/*.o
 
 # HLK に入力するリンクリスト
 HLK_LINK_LIST = $(INTERMEDIATE_DIR)/_lk_list.tmp
@@ -95,7 +95,7 @@ ${INTERMEDIATE_DIR}/$(TARGET_FILE) : $(OBJS)
 	rm -f tmp*.\$$\$$\$$
 
 # *.c ソースのコンパイル
-$(INTERMEDIATE_DIR)/%.o : %.c Makefile $(HEADER_SRCS)
+$(INTERMEDIATE_DIR)/%.o : %.c Makefile.030 $(HEADER_SRCS)
 	mkdir -p $(INTERMEDIATE_DIR)
 	$(CC) -S $(CFLAGS) -o $(INTERMEDIATE_DIR)/$*.m68k-gas.s $<
 	$(GAS2HAS) -i $(INTERMEDIATE_DIR)/$*.m68k-gas.s -o $(INTERMEDIATE_DIR)/$*.s
@@ -109,4 +109,4 @@ $(INTERMEDIATE_DIR)/%.o : %.s Makefile
 	$(HAS) -e -u -w0 $(INCLUDE_FLAGS) $(INTERMEDIATE_DIR)/$*.has -o $(INTERMEDIATE_DIR)/$*.o
 
 package:
-	zip -j ${PACKAGE_FILE} ${INTERMEDIATE_DIR}/${TARGET_FILE} ${DOCUMENT_FILE} 
+	zip -j ${PACKAGE_FILE} ${INTERMEDIATE_DIR}/${TARGET_FILE} ${DOCUMENT_FILE} ./_build000/HMP3P.X
