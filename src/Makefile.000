@@ -22,13 +22,13 @@ HLK = $(RUN68) ${XDEV68K_DIR}/x68k_bin/hlk.r
 LIBMAD_DIR="../libmad-0.15.1b"
 
 # 実行ファイル名
-TARGET_FILE = HMP3P.X
+TARGET_FILE = HMP3P000.X
 
 # Document file
 DOCUMENT_FILE = HMP3P.DOC
 
 # Distribution package 
-PACKAGE_FILE = ../HMP3P030.ZIP
+PACKAGE_FILE = ../HMP3P031.ZIP
 
 # ヘッダ検索パス
 INCLUDE_FLAGS = -I${XDEV68K_DIR}/include/xc -I${XDEV68K_DIR}/include/xdev68k -I${LIBMAD_DIR}
@@ -103,7 +103,7 @@ $(INTERMEDIATE_DIR)/%.o : %.c Makefile.000 $(HEADER_SRCS)
 	$(HAS) -e -u -w0 $(INCLUDE_FLAGS) $(INTERMEDIATE_DIR)/$*.s -o $(INTERMEDIATE_DIR)/$*.o
 
 # *.s ソースのアセンブル
-$(INTERMEDIATE_DIR)/%.o : %.s Makefile
+$(INTERMEDIATE_DIR)/%.o : %.s Makefile.000
 	mkdir -p $(INTERMEDIATE_DIR)
 	iconv -t cp932 $*.s > $(INTERMEDIATE_DIR)/$*.has
 	$(HAS) -e -u -w0 $(INCLUDE_FLAGS) $(INTERMEDIATE_DIR)/$*.has -o $(INTERMEDIATE_DIR)/$*.o
