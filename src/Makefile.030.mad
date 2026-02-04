@@ -18,8 +18,8 @@ RUN68 = ${XDEV68K_DIR}/run68/run68x
 HAS = $(RUN68) ${XDEV68K_DIR}/x68k_bin/HAS060.X
 HLK = $(RUN68) ${XDEV68K_DIR}/x68k_bin/hlk.r
 
-# libhelix directory
-LIBHELIX_DIR="../libhelix-mp3"
+# libmad directory
+LIBMAD_DIR="../libmad-0.15.1b"
 
 # 実行ファイル名
 TARGET_FILE = HMP3P.X
@@ -28,13 +28,13 @@ TARGET_FILE = HMP3P.X
 DOCUMENT_FILE = HMP3P.DOC
 
 # Distribution package 
-PACKAGE_FILE = ../HMP3P050.ZIP
+PACKAGE_FILE = ../HMP3P031.ZIP
 
 # ヘッダ検索パス
-INCLUDE_FLAGS = -I${XDEV68K_DIR}/include/xc -I${XDEV68K_DIR}/include/xdev68k -I${LIBHELIX_DIR}/pub -I${LIBHELIX_DIR}/real
+INCLUDE_FLAGS = -I${XDEV68K_DIR}/include/xc -I${XDEV68K_DIR}/include/xdev68k -I${LIBMAD_DIR}
 
 # コンパイルフラグ
-COMMON_FLAGS = -m68030 -O3 $(INCLUDE_FLAGS) -z-stack=8192 -D__USE_LIBHELIX__
+COMMON_FLAGS = -m68030 -O3 $(INCLUDE_FLAGS) -z-stack=8192
 CFLAGS = $(COMMON_FLAGS) -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall-used-a2 \
     -fexec-charset=cp932 -fverbose-asm -fno-defer-pop
 
@@ -62,8 +62,8 @@ INTERMEDIATE_DIR = _build030
 OBJS = $(addprefix $(INTERMEDIATE_DIR)/,$(patsubst %.c,%.o,$(C_SRCS))) \
 	$(addprefix $(INTERMEDIATE_DIR)/,$(patsubst %.s,%.o,$(ASM_SRCS))) 
 
-# オブジェクトファイル (libhelix)
-OBJS2 = ${LIBHELIX_DIR}/${INTERMEDIATE_DIR}/*.o ${LIBHELIX_DIR}/real/${INTERMEDIATE_DIR}/*.o
+# オブジェクトファイル (libmad)
+OBJS2 = ${LIBMAD_DIR}/${INTERMEDIATE_DIR}/*.o
 
 # HLK に入力するリンクリスト
 HLK_LINK_LIST = $(INTERMEDIATE_DIR)/_lk_list.tmp

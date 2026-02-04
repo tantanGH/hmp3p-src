@@ -6,6 +6,8 @@
 #include "jpeg_decode.h"
 #include "mp3_decode.h"
 
+#ifndef __USE_LIBHELIX__
+
 //
 //  inline helper: 24bit signed int to 16bit signed int
 //
@@ -42,6 +44,8 @@ static inline int16_t scale_12bit(mad_fixed_t sample) {
   return sample >> (MAD_F_FRACBITS + 1 - 12);
 }
 
+#endif
+
 //
 //  init mp3 decoder handle
 //
@@ -62,14 +66,23 @@ int32_t mp3_decode_init(MP3_DECODE_HANDLE* decode) {
   decode->mp3_channels = -1;
   decode->resample_counter = 0;
 
+#ifdef __USE_LIBHELIX__
+  // Helix: 内部ワークエリアの確保
+  decode->hHelix = MP3InitDecoder();
+  if (decode->hHelix == NULL) {
+    return -1; // 失敗
+  }
+  decode->helix_read_ptr = NULL;
+  decode->helix_bytes_left = 0;
+#else
   // mad
-  memset(&(decode->mad_stream), 0, sizeof(MAD_STREAM));
-  memset(&(decode->mad_frame), 0, sizeof(MAD_FRAME));
-  memset(&(decode->mad_synth), 0, sizeof(MAD_SYNTH));
-  memset(&(decode->mad_timer), 0, sizeof(MAD_TIMER));
-
+  mad_stream_init(&(decode->mad_stream));
+  mad_frame_init(&(decode->mad_frame));
+  mad_synth_init(&(decode->mad_synth));
+  mad_timer_reset(&(decode->mad_timer));
   decode->mp3_frame_options = 0;
   decode->current_mad_pcm = NULL;
+#endif
 
   return 0;
 }
@@ -79,9 +92,18 @@ int32_t mp3_decode_init(MP3_DECODE_HANDLE* decode) {
 //
 void mp3_decode_close(MP3_DECODE_HANDLE* decode) {
 
+#ifdef __USE_LIBHELIX__
+  // Helix: 内部ワークエリアの解放
+  if (decode->hHelix) {
+    MP3FreeDecoder(decode->hHelix);
+    decode->hHelix = NULL;
+  }
+#else
+  // mad
   mad_synth_finish(&(decode->mad_synth));
   mad_frame_finish(&(decode->mad_frame));
   mad_stream_finish(&(decode->mad_stream));
+#endif
 
   if (decode->mp3_title != NULL) {
     himem_free(decode->mp3_title, 0);
@@ -292,6 +314,15 @@ int32_t mp3_decode_setup(MP3_DECODE_HANDLE* decode, void* mp3_data, size_t mp3_d
   decode->mp3_channels = -1;
   decode->resample_counter = 0;
 
+#ifdef __USE_LIBHELIX__
+  // --- Helix のセットアップ ---
+  // ポインタと残りバイト数をリセット
+  decode->helix_read_ptr = (uint8_t*)mp3_data;
+  decode->helix_bytes_left = (int)mp3_data_len;
+  
+  // Helixには品質(ハーフサンプリング等)の動的な切り替えオプションはないため、
+  // mp3_quality は無視される形になります（常に最高品質）。
+#else
   // mad frame options
   decode->mp3_frame_options = 
     decode->mp3_quality == 2 ? MAD_OPTION_QUARTERSAMPLERATE | MAD_OPTION_IGNORECRC :
@@ -305,6 +336,7 @@ int32_t mp3_decode_setup(MP3_DECODE_HANDLE* decode, void* mp3_data, size_t mp3_d
   mad_stream_buffer(&(decode->mad_stream), mp3_data, mp3_data_len);
 
   decode->current_mad_pcm = NULL;
+#endif
 
   return 0;
 }
@@ -319,6 +351,60 @@ int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_
 
   // decode counter
   int32_t decode_ofs = 0;
+
+#ifdef __USE_LIBHELIX__
+  // --- Helix デコード処理 ---
+
+  // 初回呼び出し時、ポインタが未設定ならセットする
+  if (decode->helix_read_ptr == NULL) {
+    decode->helix_read_ptr = (uint8_t*)decode->mp3_data;
+    decode->helix_bytes_left = (int)decode->mp3_data_len;
+  }
+
+  for (;;) {
+    // 060のバースト転送効率を考え、1フレーム分(最大2304サンプル)の空きを確認
+    if ((decode_ofs + 2304) * sizeof(int16_t) > decode_buffer_bytes) {
+      break; 
+    }
+
+    // デコード実行
+    // ※引数の &decode->helix_read_ptr により、内部でポインタが進められます
+    int err = MP3Decode(decode->hHelix, 
+                        &decode->helix_read_ptr, 
+                        &decode->helix_bytes_left, 
+                        &decode_buffer[decode_ofs], 
+                        0);
+
+    if (err == ERR_MP3_NONE) {
+      // フレーム情報を取得してデコード済みサンプル数を更新
+      MP3GetLastFrameInfo(decode->hHelix, &(decode->helix_info));
+      decode_ofs += decode->helix_info.outputSamps;
+
+      // サンプリングレート等の情報を反映
+      if (decode->mp3_sample_rate < 0) {
+        decode->mp3_sample_rate = decode->helix_info.samprate;
+        decode->mp3_channels = decode->helix_info.nChans;
+      }
+    } else {
+      if (err == ERR_MP3_INDATA_UNDERFLOW) {
+        // データ末尾に到達
+        break;
+      } else if (err == ERR_MP3_MAINDATA_UNDERFLOW) {
+        // 次のフレームにまたがるデータが不足（そのまま続行）
+        continue;
+      } else {
+        // リカバラブルなエラー（同期ミス等）は無視して次へ、致命的なら終了
+        if (decode->helix_bytes_left > 0) {
+          decode->helix_read_ptr++;
+          decode->helix_bytes_left--;
+          continue;
+        }
+        break;
+      }
+    }
+  }
+
+#else
 
   for (;;) {
     
@@ -383,6 +469,8 @@ int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_
 
 exit:
 
+#endif
+
   // push resampled count
   *decoded_bytes = decode_ofs * sizeof(int16_t);
 
@@ -399,6 +487,70 @@ int32_t mp3_decode_resample(MP3_DECODE_HANDLE* decode, int16_t* resample_buffer,
 
   // down sampling counter
   int32_t resample_ofs = 0;
+
+#ifdef __USE_LIBHELIX__
+  // Helix用の一時PCMバッファ（1フレーム分 = 1152 * 2ch = 2304個のshort）
+  // 毎回確保すると遅いので、ハイメモリに確保したワークエリア等を活用してください
+  // ここではスタックではなく、デコーダ構造体に持たせた一時バッファを使う想定です
+  int16_t helix_pcm_buf[2304]; 
+
+  for (;;) {
+    // 書き出し先の空き容量チェック（余裕を見て1フレーム分）
+    if ((resample_ofs + 1152) * sizeof(int16_t) > resample_buffer_bytes) {
+      break;
+    }
+
+    int err = MP3Decode(decode->hHelix, &decode->helix_read_ptr, &decode->helix_bytes_left, helix_pcm_buf, 0);
+
+    if (err == ERR_MP3_NONE) {
+      MP3GetLastFrameInfo(decode->hHelix, &(decode->helix_info));
+      
+      int nChans = decode->helix_info.nChans;
+      int samprate = decode->helix_info.samprate;
+      int samplesPerChan = decode->helix_info.outputSamps / nChans;
+
+      if (decode->mp3_sample_rate < 0) {
+        decode->mp3_sample_rate = samprate;
+        decode->mp3_channels = nChans;
+      }
+
+      // --- リサンプリング & モノラル化 ---
+      int16_t* src = helix_pcm_buf;
+      for (int i = 0; i < samplesPerChan; i++) {
+        decode->resample_counter += resample_freq;
+        
+        if (decode->resample_counter >= samprate) {
+          if (nChans == 2) {
+            // ステレオ -> モノラル & ADPCMレンジへ (16bit -> 12bit相当へ)
+            // Helixは既に16bitなので、足して割るだけ
+            int32_t mono = (src[0] + src[1]) >> 1; 
+            resample_buffer[resample_ofs++] = (int16_t)(mono >> 4); // /16相当
+            src += 2;
+          } else {
+            // モノラル -> ADPCMレンジへ
+            resample_buffer[resample_ofs++] = (int16_t)((*src) >> 4);
+            src++;
+          }
+          decode->resample_counter -= samprate;
+        } else {
+          // スキップする場合もソースポインタは進める
+          src += nChans;
+        }
+      }
+    } else if (err == ERR_MP3_INDATA_UNDERFLOW) {
+      break;
+    } else {
+      // エラー処理（同期ズレ等）
+      if (decode->helix_bytes_left > 0) {
+        decode->helix_read_ptr++;
+        decode->helix_bytes_left--;
+        continue;
+      }
+      break;
+    }
+  }
+
+#else
 
   for (;;) {
     
@@ -477,6 +629,8 @@ int32_t mp3_decode_resample(MP3_DECODE_HANDLE* decode, int16_t* resample_buffer,
   rc = 0;
 
 exit:
+
+#endif
 
   // push resampled count
   *resampled_bytes = resample_ofs * sizeof(int16_t);

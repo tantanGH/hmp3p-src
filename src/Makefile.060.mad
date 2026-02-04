@@ -13,28 +13,28 @@ endif
 # 各種コマンド短縮名
 CXX = ${XDEV68K_DIR}/m68k-toolchain/bin/m68k-elf-g++
 CC = ${XDEV68K_DIR}/m68k-toolchain/bin/m68k-elf-gcc
-GAS2HAS = perl ${XDEV68K_DIR}/util/x68k_gas2has.pl -cpu 68030 -inc doscall.inc -inc iocscall.inc
+GAS2HAS = perl ${XDEV68K_DIR}/util/x68k_gas2has.pl -cpu 68060 -inc doscall.inc -inc iocscall.inc
 RUN68 = ${XDEV68K_DIR}/run68/run68x
 HAS = $(RUN68) ${XDEV68K_DIR}/x68k_bin/HAS060.X
 HLK = $(RUN68) ${XDEV68K_DIR}/x68k_bin/hlk.r
 
-# libhelix directory
-LIBHELIX_DIR="../libhelix-mp3"
+# libmad directory
+LIBMAD_DIR="../libmad-0.15.1b"
 
 # 実行ファイル名
-TARGET_FILE = HMP3P.X
+TARGET_FILE = HMP3P060.X
 
 # Document file
 DOCUMENT_FILE = HMP3P.DOC
 
 # Distribution package 
-PACKAGE_FILE = ../HMP3P050.ZIP
+PACKAGE_FILE = ../HMP3P031.ZIP
 
 # ヘッダ検索パス
-INCLUDE_FLAGS = -I${XDEV68K_DIR}/include/xc -I${XDEV68K_DIR}/include/xdev68k -I${LIBHELIX_DIR}/pub -I${LIBHELIX_DIR}/real
+INCLUDE_FLAGS = -I${XDEV68K_DIR}/include/xc -I${XDEV68K_DIR}/include/xdev68k -I${LIBMAD_DIR}
 
 # コンパイルフラグ
-COMMON_FLAGS = -m68030 -O3 $(INCLUDE_FLAGS) -z-stack=8192 -D__USE_LIBHELIX__
+COMMON_FLAGS = -m68060 -O3 $(INCLUDE_FLAGS) -z-stack=8192
 CFLAGS = $(COMMON_FLAGS) -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall-used-a2 \
     -fexec-charset=cp932 -fverbose-asm -fno-defer-pop
 
@@ -56,14 +56,14 @@ LIBS =\
 	${XDEV68K_DIR}/lib/m68k_elf/m68000/libgcc.a
 
 # 中間ファイル生成用ディレクトリ
-INTERMEDIATE_DIR = _build030
+INTERMEDIATE_DIR = _build060
 
 # オブジェクトファイル
 OBJS = $(addprefix $(INTERMEDIATE_DIR)/,$(patsubst %.c,%.o,$(C_SRCS))) \
 	$(addprefix $(INTERMEDIATE_DIR)/,$(patsubst %.s,%.o,$(ASM_SRCS))) 
 
-# オブジェクトファイル (libhelix)
-OBJS2 = ${LIBHELIX_DIR}/${INTERMEDIATE_DIR}/*.o ${LIBHELIX_DIR}/real/${INTERMEDIATE_DIR}/*.o
+# オブジェクトファイル (libmad)
+OBJS2 = ${LIBMAD_DIR}/${INTERMEDIATE_DIR}/*.o
 
 # HLK に入力するリンクリスト
 HLK_LINK_LIST = $(INTERMEDIATE_DIR)/_lk_list.tmp
@@ -95,7 +95,7 @@ ${INTERMEDIATE_DIR}/$(TARGET_FILE) : $(OBJS)
 	rm -f tmp*.\$$\$$\$$
 
 # *.c ソースのコンパイル
-$(INTERMEDIATE_DIR)/%.o : %.c Makefile.030 $(HEADER_SRCS)
+$(INTERMEDIATE_DIR)/%.o : %.c Makefile.060 $(HEADER_SRCS)
 	mkdir -p $(INTERMEDIATE_DIR)
 	$(CC) -S $(CFLAGS) -o $(INTERMEDIATE_DIR)/$*.m68k-gas.s $<
 	$(GAS2HAS) -i $(INTERMEDIATE_DIR)/$*.m68k-gas.s -o $(INTERMEDIATE_DIR)/$*.s
@@ -103,7 +103,7 @@ $(INTERMEDIATE_DIR)/%.o : %.c Makefile.030 $(HEADER_SRCS)
 	$(HAS) -e -u -w0 $(INCLUDE_FLAGS) $(INTERMEDIATE_DIR)/$*.s -o $(INTERMEDIATE_DIR)/$*.o
 
 # *.s ソースのアセンブル
-$(INTERMEDIATE_DIR)/%.o : %.s Makefile.030
+$(INTERMEDIATE_DIR)/%.o : %.s Makefile.060
 	mkdir -p $(INTERMEDIATE_DIR)
 	iconv -t cp932 $*.s > $(INTERMEDIATE_DIR)/$*.has
 	$(HAS) -e -u -w0 $(INCLUDE_FLAGS) $(INTERMEDIATE_DIR)/$*.has -o $(INTERMEDIATE_DIR)/$*.o
