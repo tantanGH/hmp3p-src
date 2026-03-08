@@ -5,9 +5,6 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#ifdef __USE_LIBHELIX__
-#include "mp3dec.h"
-#else
 #include "mad.h"
 typedef struct mad_stream MAD_STREAM;
 typedef struct mad_synth MAD_SYNTH;
@@ -15,7 +12,8 @@ typedef struct mad_header MAD_HEADER;
 typedef struct mad_pcm MAD_PCM;
 typedef struct mad_frame MAD_FRAME;
 typedef mad_timer_t MAD_TIMER;
-#endif
+
+#define MAX_MP3_FRAMES  (50000)
 
 typedef struct {
 
@@ -31,19 +29,12 @@ typedef struct {
   int32_t mp3_channels;
   size_t resample_counter;
 
-#ifdef __USE_LIBHELIX__
-  HMP3Decoder hHelix;          // Helixデコーダのインスタンスハンドル
-  MP3FrameInfo helix_info;     // 現在のフレーム情報（サンプリングレート、出力サンプル数など）
-  uint8_t* helix_read_ptr;     // 次に読み込むデータのポインタ（Helixが自動更新する）
-  int helix_bytes_left;        // バッファ内に残っているバイト数
-#else
   MAD_STREAM mad_stream;
   MAD_FRAME mad_frame;
   MAD_SYNTH mad_synth;
   MAD_TIMER mad_timer;
   MAD_PCM* current_mad_pcm;
   int32_t mp3_frame_options;
-#endif
 
 } MP3_DECODE_HANDLE;
 

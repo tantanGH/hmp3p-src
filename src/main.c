@@ -178,6 +178,7 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   int16_t staging_file_read = 0;
   int16_t pic_brightness = 0;
   int16_t quiet_mode = 0;
+  int16_t debug_mode = 0;
 
   // total number of chains
   int32_t num_chains = 0;
@@ -187,10 +188,17 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   error_mes[0] = '\0';
   
   // check mpu type
-  if (get_mpu_type() < 3) {
-    strcpy(error_mes, cp932rsc_mpu_type);
+#ifdef __mc68060__
+  if (get_mpu_type() < 6) {
+    strcpy(error_mes, cp932rsc_mpu_type_68060);
     goto exit;
   }
+#elif __mc68030__
+  if (get_mpu_type() < 3) {
+    strcpy(error_mes, cp932rsc_mpu_type_68030);
+    goto exit;
+  }
+#endif
 
   // parse command line options
   for (int16_t i = 1; i < argc; i++) {
@@ -219,6 +227,8 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
         staging_file_read = 1;
       } else if (argv[i][1] == 'n') {
         quiet_mode = 1;
+      } else if (argv[i][1] == 'd') {
+        debug_mode = 1;
       } else if (argv[i][1] == 't') {
         pic_brightness = atoi(argv[i]+2);
         if (pic_brightness < 0 || pic_brightness > 100 || strlen(argv[i]) < 3) {

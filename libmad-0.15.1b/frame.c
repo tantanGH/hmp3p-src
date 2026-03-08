@@ -21,6 +21,10 @@
 
 #include "../src/himem.h"
 
+#ifdef __VERBOSE2__
+#include <iocslib.h>
+#endif
+
 # ifdef HAVE_CONFIG_H
 #  include "config.h"
 # endif
@@ -445,23 +449,42 @@ int mad_frame_decode(struct mad_frame *frame, struct mad_stream *stream)
   /* header() */
   /* error_check() */
 
+#ifdef __VERBOSE_FRAME_DECODE__
+  unsigned long t0 = ONTIME();
+#endif
+
   if (!(frame->header.flags & MAD_FLAG_INCOMPLETE) &&
       mad_header_decode(&frame->header, stream) == -1)
     goto fail;
+
+#ifdef __VERBOSE_FRAME_DECODE__
+  unsigned long t1 = ONTIME();
+  frame->header_decode_time = (t1 - t0);
+#endif
 
   /* audio_data() */
 
   frame->header.flags &= ~MAD_FLAG_INCOMPLETE;
 
+#ifdef __OPT_X68K_FAST_FRAME_DECODE__
+  if (mad_layer_III(stream, frame) == -1) {
+#else
   if (decoder_table[frame->header.layer - 1](stream, frame) == -1) {
+#endif
     if (!MAD_RECOVERABLE(stream->error))
       stream->next_frame = stream->this_frame;
 
     goto fail;
   }
 
+#ifdef __VERBOSE_FRAME_DECODE__
+  unsigned long t2 = ONTIME();
+  frame->layer3_time = (t2 - t1);
+#endif
+
   /* ancillary_data() */
 
+#ifndef __OPT_X68K_FAST_FRAME_DECODE__
   if (frame->header.layer != MAD_LAYER_III) {
     struct mad_bitptr next_frame;
 
@@ -472,6 +495,7 @@ int mad_frame_decode(struct mad_frame *frame, struct mad_stream *stream)
 
     mad_bit_finish(&next_frame);
   }
+#endif
 
   return 0;
 

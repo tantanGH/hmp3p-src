@@ -275,52 +275,83 @@ static __inline int CLZ(int x)
 
 #elif defined(__m68k__)
 
-/* --- X68030 / 040 / 060 向け共通定義 --- */
+#include <stdint.h>
 
-/* 68k/gcc 環境向けの型定義 */
-typedef long long Word64;
-typedef int Word32;
-typedef short Word16;
+#define Word64 int64_t
+#define Word32 int32_t
+#define Word16 int16_t
 
-// 絶対値を高速に計算するマクロ
-#ifndef FASTABS
-#define FASTABS(x) ((x) < 0 ? -(x) : (x))
-#endif
+/* 1. MULSHIFT32 (32bit同士の積の上位32bitを返す) */
+/* 現代のGCCなら (int64_t) キャストで Big/Little 問わず正しく上位32bitが取れます */
+static inline int32_t MULSHIFT32x(int32_t x, int32_t y) {
+    return (int32_t)(((int64_t)x * (int64_t)y) >> 32);
+}
+static inline int32_t MULSHIFT32(int32_t x, int32_t y) {
+    int32_t res_high;
+    int32_t res_low;
 
-// 64bit 加算・シフトのマクロ (polyphase.c で使用)
-// これらが無いと関数呼び出しとして探されてしまいます
-#define MADD64(sum, x, y) (sum += (Word64)(x) * (y))
-#define SAR64(sum, n)     (sum >> (n))
-
-// 32bit * 32bit -> 64bit -> 31bit右シフト
-// 固定小数点演算の核となる処理です
-static inline int MulShift32(int x, int y) {
-    int hi, lo;
-    __asm__ (
-        "muls.l %2,%1:%0\n\t"  /* x * y -> hi:lo (64bit) */
-        "lsl.l #1,%0\n\t"      /* 下位32bitを1左シフト */
-        "roxl.l #1,%1"         /* キャリーを含めて上位を1左シフト */
-        : "=d"(lo), "=d"(hi)   /* %0=lo, %1=hi */
-        : "d"(y), "0"(x)       /* %2=y,  %0=x (初期値) */
+    __asm__ __volatile__ (
+        "move.l  %2,%0\n\t"     /* 下位レジスタ Dl に x をセット */
+        "muls.l  %3,%1:%0"      /* Dh:Dl = Dl * y */
+        : "=&d"(res_low), "=d"(res_high)
+        : "d"(x), "d"(y)        /* 全てデータレジスタに限定(重要) */
         : "cc"
     );
-    /* (x*y) << 1 の上位32bitを返すことで、実質的に >> 31 と同等になります */
-    return hi;
+
+    return res_high;
 }
 
-#define MULSHIFT32(x, y) MulShift32(x, y)
-
-// 先頭のゼロの数を数える (Count Leading Zeros)
-// MP3のハフマン復号で多用されます
-static inline int _helix_clz(int x) {
-    int res;
-    /* bfffo (Bit Field Find First One) は030以降の標準命令です */
-    /* 0x80000000なら0、0なら32を返します */
-    __asm__ ("bfffo %1{#0:#32},%0" : "=d"(res) : "d"(x));
+/* 2. FASTABS (絶対値) */
+/* 標準的な三項演算子。現代のGCCなら分岐なし命令(smi等)に自動最適化されることが多いです */
+/*
+static inline int32_t FASTABS(int32_t x) {
+    return (x < 0) ? -x : x;
+}
+*/
+static inline int FASTABS(int x) {
+    int res = x;
+    int temp;
+    __asm__ (
+        "move.l %0,%1\n\t"
+        "smi    %1\n\t"
+        "extb.l %1\n\t"
+        "eor.l  %1,%0\n\t"
+        "sub.l  %1,%0"
+        : "+d"(res), "=d"(temp)
+        :
+        : "cc"
+    );
     return res;
 }
 
-#define CLZ(x) _helix_clz(x)
+/* 3. CLZ (先頭のゼロの数を数える) */
+/* GCC 組み込み関数を使用します。これが最も確実で高速です */
+/* 060用ならコンパイラが自動的に bfffo 命令等に変換してくれる可能性があります */
+/*
+static inline int32_t CLZ(int32_t x) {
+    if (x == 0) return 32;
+    return __builtin_clz(x);
+}
+*/
+static inline int CLZ(int x) {
+    int res;
+    if (x == 0) return 32;
+    __asm__ (
+        "bfffo %1{#0:#32},%0"
+        : "=d"(res)
+        : "d"(x)
+        : "cc"
+    );
+    return res;
+}
+
+/* 4. MADD64 / SHL64 / SAR64 (64bit 累積演算) */
+/* Helixの内部で long long の演算エラーを防ぐために標準的な記述で定義します */
+#define MADD64(sum, x, y) (sum += (int64_t)(x) * (int64_t)(y))
+#define SHL64(sum, n)     ((int64_t)(sum) << (n))
+#define SAR64(sum, n)     ((int64_t)(sum) >> (n))
+
+#endif
 
 #else
 

@@ -24,8 +24,13 @@
 
 # include "bit.h"
 
+#ifdef __OPT_X68K_FAST_FRAME_DECODE__
+# define MAD_BUFFER_GUARD	8
+# define MAD_BUFFER_MDLEN	(511 + 2048*32 + MAD_BUFFER_GUARD)
+#else
 # define MAD_BUFFER_GUARD	8
 # define MAD_BUFFER_MDLEN	(511 + 2048 + MAD_BUFFER_GUARD)
+#endif
 
 enum mad_error {
   MAD_ERROR_NONE	   = 0x0000,	/* no error */

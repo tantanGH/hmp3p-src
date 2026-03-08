@@ -80,7 +80,7 @@
 #define OPT_SPEED
 
 /* Define to enable a fast subband synthesis approximation optimization. */
-/* #undef OPT_SSO */
+#define OPT_SSO
 
 /* Define to influence a strict interpretation of the ISO/IEC standards, even
    if this is in opposition with best accepted practices. */

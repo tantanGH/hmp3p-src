@@ -12,10 +12,10 @@ HAS=${XDEV68K_DIR}/x68k_bin/HAS060.X
 AR=${XDEV68K_DIR}/x68k_bin/AR.X
 
 INCLUDE_FLAGS="-I../pub -I${XDEV68K_DIR}/include/xc -I${XDEV68K_DIR}/include/xdev68k"
-COMMON_FLAGS="-m68060 -O3 ${INCLUDE_FLAGS} -z-stack=32768"
+COMMON_FLAGS="-m68060 -O3 -fomit-frame-pointer ${INCLUDE_FLAGS} -z-stack=32768"
 CFLAGS="${COMMON_FLAGS} -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall-used-a2 \
-    -fexec-charset=cp932 -fverbose-asm -fno-defer-pop -DFPM_DEFAULT -D_TIME_T_DECLARED -D_CLOCK_T_DECLARED -Dwint_t=int \
-    -DHELIX_GENERIC -DOUT_GENERIC \
+    -fexec-charset=cp932 -fverbose-asm -fno-defer-pop -D_TIME_T_DECLARED -D_CLOCK_T_DECLARED -Dwint_t=int \
+    -DHELIX_GENERIC -DOUT_GENERIC -DFIXED_POINT \
 		-DXDEV68K -DFPM_DEFAULT -DOPT_SPEED"
 
 LIBS="${XDEV68K_DIR}/lib/xc/CLIB.L ${XDEV68K_DIR}/lib/xc/DOSLIB.L ${XDEV68K_DIR}/lib/xc/IOCSLIB.L ${XDEV68K_DIR}/lib/xc/FLOATFNC.L ${XDEV68K_DIR}/lib/m68k_elf/m68000/libgcc.a"
