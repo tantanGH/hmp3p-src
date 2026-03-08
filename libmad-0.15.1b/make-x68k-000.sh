@@ -12,7 +12,7 @@ HAS=${XDEV68K_DIR}/x68k_bin/HAS060.X
 AR=${XDEV68K_DIR}/x68k_bin/AR.X
 
 INCLUDE_FLAGS="-I${XDEV68K_DIR}/include/xc -I${XDEV68K_DIR}/include/xdev68k"
-COMMON_FLAGS="-m68000 -O3 -fomit-frame-pointer -finline-limit=10000 -funroll-loops ${INCLUDE_FLAGS} -z-stack=32768"
+COMMON_FLAGS="-m68000 -msoft-float -O3 -fomit-frame-pointer -finline-limit=10000 -funroll-loops ${INCLUDE_FLAGS} -z-stack=32768"
 CFLAGS="${COMMON_FLAGS} -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall-used-a2 \
     -fexec-charset=cp932 -fverbose-asm -fno-defer-pop -D_TIME_T_DECLARED -D_CLOCK_T_DECLARED -Dwint_t=int \
 		-DXDEV68K -DFPM_DEFAULT -DOPT_SPEED"

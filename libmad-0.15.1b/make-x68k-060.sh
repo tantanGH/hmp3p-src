@@ -15,7 +15,7 @@ INCLUDE_FLAGS="-I${XDEV68K_DIR}/include/xc -I${XDEV68K_DIR}/include/xdev68k"
 COMMON_FLAGS="-m68060 -O3 -fomit-frame-pointer -fschedule-insns2 -finline-limit=10000 -funroll-loops -falign-functions=16 -falign-loops=16 ${INCLUDE_FLAGS} -z-stack=32768"
 CFLAGS="${COMMON_FLAGS} -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall-used-a2 \
     -fexec-charset=cp932 -fverbose-asm -fno-defer-pop -D_TIME_T_DECLARED -D_CLOCK_T_DECLARED -Dwint_t=int \
-		-DXDEV68K -DFPM_DEFAULT -DOPT_SPEED -D__NO_VERBOSE_LAYER3_DECODE__ -D__OPT_X68K_FAST_FRAME_DECODE__"
+		-DXDEV68K -DFPM_DEFAULT -DOPT_SPEED -D__OPT_X68K_FAST_FRAME_DECODE__"
 
 LIBS="${XDEV68K_DIR}/lib/xc/CLIB.L ${XDEV68K_DIR}/lib/xc/DOSLIB.L ${XDEV68K_DIR}/lib/xc/IOCSLIB.L ${XDEV68K_DIR}/lib/xc/FLOATFNC.L ${XDEV68K_DIR}/lib/m68k_elf/m68000/libgcc.a"
 
