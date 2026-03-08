@@ -18,7 +18,8 @@ extern uint8_t cp932rsc_mp3_decoder_init_error[];
 extern uint8_t cp932rsc_mp3_decoder_setup_error[];
 extern uint8_t cp932rsc_mp3_decode_error[];
 extern uint8_t cp932rsc_buffer_underrun[];
-extern uint8_t cp932rsc_mpu_type[];
+extern uint8_t cp932rsc_mpu_type_68060[];
+extern uint8_t cp932rsc_mpu_type_68030[];
 extern uint8_t cp932rsc_not_mp3_file[];
 extern uint8_t cp932rsc_half_rate_mercury35[];
 

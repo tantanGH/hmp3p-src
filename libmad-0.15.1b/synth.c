@@ -101,8 +101,8 @@ void mad_synth_mute(struct mad_synth *synth)
 # endif
 
 /* possible DCT speed optimization */
-
 # if defined(OPT_SPEED) && defined(MAD_F_MLX)
+#  pragma message "OPT_SPEED & MAD_F_MLX"
 #  define OPT_DCTO
 #  define MUL(x, y)  \
     ({ mad_fixed64hi_t hi;  \
@@ -550,10 +550,1605 @@ mad_fixed_t const D[17][32] = {
 void synth_full(struct mad_synth *, struct mad_frame const *,
 		unsigned int, unsigned int);
 # else
+
+
+#ifdef __OPT_X68K_INTERLEAVED_16BIT_DIRECT__
+
+//
+//  inline helper: 24bit signed int to 16bit signed int
+//
+static inline int16_t scale_16bit(mad_fixed_t sample) {
+
+  // round
+  sample += (1L << (MAD_F_FRACBITS - 16));
+
+  // clip
+  if (sample >= MAD_F_ONE)
+    sample = MAD_F_ONE - 1;
+  else if (sample < -MAD_F_ONE)
+    sample = -MAD_F_ONE;
+
+  // quantize
+  return sample >> (MAD_F_FRACBITS + 1 - 16);
+}
+
+/*
+ * SHIFT(12bit) と scale_16bit(13bit) を統合
+ * 合計 25bit 右シフトして 16bit 整数を得る
+ */
+static inline int16_t scale_mad_to_16bit(mad_fixed64hi_t hi, mad_fixed64lo_t lo) {
+
+  //#  define SHIFT(x)  (((x) + (1L << 11)) >> 12)
+    mad_fixed_t sample = SHIFT(MLZ(hi,lo));
+
+    /* クリッピング (28bit fracベース) */
+    if (sample >= MAD_F_ONE)
+        sample = MAD_F_ONE - 1;
+    else if (sample < -MAD_F_ONE)
+        sample = -MAD_F_ONE;
+
+    /* 最終量子化 (13bitシフト) */
+    return (int16_t)(sample >> 13);
+}
+
+static inline int16_t scale_mad_to_16bit_direct(mad_fixed64hi_t hi, mad_fixed64lo_t lo) {
+    /* 1. MLZで得た値を 28bit frac -> 15bit frac 相当へ丸めながらシフト */
+    /* 28 - 15 = 13bit シフト。丸めのため (1 << 12) を加算 */
+    mad_fixed_t sample = (mad_fixed_t) ((MLZ(hi, lo) + (1L << 13)) >> 14);
+
+    /* 2. クリッピング (15bit frac 範囲は 32768) */
+    /* MAD_F_ONE は 28bit frac (0x10000000) なので、ここでは直接 32767/ -32768 を使うのが正解 */
+    if (sample >= 32767)
+        sample = 32767;
+    else if (sample < -32768)
+        sample = -32768;
+
+    return (int16_t)sample;
+}
+
+static void synth_full(struct mad_synth *synth, struct mad_frame const *frame,
+                       unsigned int nch, unsigned int ns)
+{
+    unsigned int phase, s, sb, pe, po;
+    register mad_fixed64hi_t hi;
+    register mad_fixed64lo_t lo;
+    int16_t *out16 = synth->pcm_16bit;
+
+    if (nch == 2) {
+        mad_fixed_t const (*sbsampleL)[36][32] = &frame->sbsample[0];
+        mad_fixed_t const (*sbsampleR)[36][32] = &frame->sbsample[1];
+        mad_fixed_t (*filterL)[2][2][16][8] = &synth->filter[0];
+        mad_fixed_t (*filterR)[2][2][16][8] = &synth->filter[1];
+        phase = synth->phase;
+
+        for (s = 0; s < ns; ++s) {
+            dct32((*sbsampleL)[s], phase >> 1, (*filterL)[0][phase & 1], (*filterL)[1][phase & 1]);
+            dct32((*sbsampleR)[s], phase >> 1, (*filterR)[0][phase & 1], (*filterR)[1][phase & 1]);
+
+            pe = phase & ~1;
+            po = ((phase - 1) & 0xf) | 1;
+
+            register mad_fixed_t (*feL)[8] = &(*filterL)[0][phase & 1][0];
+            register mad_fixed_t (*fxL)[8] = &(*filterL)[0][~phase & 1][0];
+            register mad_fixed_t (*foL)[8] = &(*filterL)[1][~phase & 1][0];
+            register mad_fixed_t (*feR)[8] = &(*filterR)[0][phase & 1][0];
+            register mad_fixed_t (*fxR)[8] = &(*filterR)[0][~phase & 1][0];
+            register mad_fixed_t (*foR)[8] = &(*filterR)[1][~phase & 1][0];
+
+            const mad_fixed_t (*Dptr)[32] = &D[0];
+            const mad_fixed_t *ptr;
+
+            /* ---- sb=0 (Sample 0) ---- */
+            ptr = *Dptr + po;
+            // L-ch
+            ML0(hi, lo, (*fxL)[0], ptr[0]);  MLA(hi, lo, (*fxL)[1], ptr[14]);
+            MLA(hi, lo, (*fxL)[2], ptr[12]); MLA(hi, lo, (*fxL)[3], ptr[10]);
+            MLA(hi, lo, (*fxL)[4], ptr[8]);  MLA(hi, lo, (*fxL)[5], ptr[6]);
+            MLA(hi, lo, (*fxL)[6], ptr[4]);  MLA(hi, lo, (*fxL)[7], ptr[2]);
+            MLN(hi, lo);
+            ptr = *Dptr + pe;
+            MLA(hi, lo, (*feL)[0], ptr[0]);  MLA(hi, lo, (*feL)[1], ptr[14]);
+            MLA(hi, lo, (*feL)[2], ptr[12]); MLA(hi, lo, (*feL)[3], ptr[10]);
+            MLA(hi, lo, (*feL)[4], ptr[8]);  MLA(hi, lo, (*feL)[5], ptr[6]);
+            MLA(hi, lo, (*feL)[6], ptr[4]);  MLA(hi, lo, (*feL)[7], ptr[2]);
+            out16[0] = scale_mad_to_16bit(hi,lo);
+
+            ptr = *Dptr + po;
+            // R-ch
+            ML0(hi, lo, (*fxR)[0], ptr[0]);  MLA(hi, lo, (*fxR)[1], ptr[14]);
+            MLA(hi, lo, (*fxR)[2], ptr[12]); MLA(hi, lo, (*fxR)[3], ptr[10]);
+            MLA(hi, lo, (*fxR)[4], ptr[8]);  MLA(hi, lo, (*fxR)[5], ptr[6]);
+            MLA(hi, lo, (*fxR)[6], ptr[4]);  MLA(hi, lo, (*fxR)[7], ptr[2]);
+            MLN(hi, lo);
+            ptr = *Dptr + pe;
+            MLA(hi, lo, (*feR)[0], ptr[0]);  MLA(hi, lo, (*feR)[1], ptr[14]);
+            MLA(hi, lo, (*feR)[2], ptr[12]); MLA(hi, lo, (*feR)[3], ptr[10]);
+            MLA(hi, lo, (*feR)[4], ptr[8]);  MLA(hi, lo, (*feR)[5], ptr[6]);
+            MLA(hi, lo, (*feR)[6], ptr[4]);  MLA(hi, lo, (*feR)[7], ptr[2]);
+            out16[1] = scale_mad_to_16bit(hi,lo);
+
+            /* ---- sb=1..15 (Samples 1..15 and 31..17) ---- */
+            for (sb = 1; sb < 16; ++sb) {
+                ++feL; ++feR; ++Dptr;
+                const mad_fixed_t *dpo = *Dptr + po;
+                const mad_fixed_t *dpe = *Dptr + pe;
+                const mad_fixed_t *dnpo = *Dptr - po;
+                const mad_fixed_t *dnpe = *Dptr - pe;
+
+                /* PCM1 (Sample sb) */
+                // L
+                ML0(hi, lo, (*foL)[0], dpo[0]);  MLA(hi, lo, (*foL)[1], dpo[14]);
+                MLA(hi, lo, (*foL)[2], dpo[12]); MLA(hi, lo, (*foL)[3], dpo[10]);
+                MLA(hi, lo, (*foL)[4], dpo[8]);  MLA(hi, lo, (*foL)[5], dpo[6]);
+                MLA(hi, lo, (*foL)[6], dpo[4]);  MLA(hi, lo, (*foL)[7], dpo[2]);
+                MLN(hi, lo);
+                MLA(hi, lo, (*feL)[7], dpe[2]);  MLA(hi, lo, (*feL)[6], dpe[4]);
+                MLA(hi, lo, (*feL)[5], dpe[6]);  MLA(hi, lo, (*feL)[4], dpe[8]);
+                MLA(hi, lo, (*feL)[3], dpe[10]); MLA(hi, lo, (*feL)[2], dpe[12]);
+                MLA(hi, lo, (*feL)[1], dpe[14]); MLA(hi, lo, (*feL)[0], dpe[0]);
+                out16[sb * 2] = scale_mad_to_16bit(hi,lo);
+                // R
+                ML0(hi, lo, (*foR)[0], dpo[0]);  MLA(hi, lo, (*foR)[1], dpo[14]);
+                MLA(hi, lo, (*foR)[2], dpo[12]); MLA(hi, lo, (*foR)[3], dpo[10]);
+                MLA(hi, lo, (*foR)[4], dpo[8]);  MLA(hi, lo, (*foR)[5], dpo[6]);
+                MLA(hi, lo, (*foR)[6], dpo[4]);  MLA(hi, lo, (*foR)[7], dpo[2]);
+                MLN(hi, lo);
+                MLA(hi, lo, (*feR)[7], dpe[2]);  MLA(hi, lo, (*feR)[6], dpe[4]);
+                MLA(hi, lo, (*feR)[5], dpe[6]);  MLA(hi, lo, (*feR)[4], dpe[8]);
+                MLA(hi, lo, (*feR)[3], dpe[10]); MLA(hi, lo, (*feR)[2], dpe[12]);
+                MLA(hi, lo, (*feR)[1], dpe[14]); MLA(hi, lo, (*feR)[0], dpe[0]);
+                out16[sb * 2 + 1] = scale_mad_to_16bit(hi,lo);
+
+                /* PCM2 (Sample 32 - sb) */
+                int p2_idx = (32 - sb) * 2;
+                // L
+                ML0(hi, lo, (*foL)[7], dnpo[29]); MLA(hi, lo, (*foL)[6], dnpo[27]);
+                MLA(hi, lo, (*foL)[5], dnpo[25]); MLA(hi, lo, (*foL)[4], dnpo[23]);
+                MLA(hi, lo, (*foL)[3], dnpo[21]); MLA(hi, lo, (*foL)[2], dnpo[19]);
+                MLA(hi, lo, (*foL)[1], dnpo[17]); MLA(hi, lo, (*foL)[0], dnpo[15]);
+                MLA(hi, lo, (*feL)[0], dnpe[15]); MLA(hi, lo, (*feL)[1], dnpe[17]);
+                MLA(hi, lo, (*feL)[2], dnpe[19]); MLA(hi, lo, (*feL)[3], dnpe[21]);
+                MLA(hi, lo, (*feL)[4], dnpe[23]); MLA(hi, lo, (*feL)[5], dnpe[25]);
+                MLA(hi, lo, (*feL)[6], dnpe[27]); MLA(hi, lo, (*feL)[7], dnpe[29]);
+                out16[p2_idx] = scale_mad_to_16bit(hi,lo);
+                // R
+                ML0(hi, lo, (*foR)[7], dnpo[29]); MLA(hi, lo, (*foR)[6], dnpo[27]);
+                MLA(hi, lo, (*foR)[5], dnpo[25]); MLA(hi, lo, (*foR)[4], dnpo[23]);
+                MLA(hi, lo, (*foR)[3], dnpo[21]); MLA(hi, lo, (*foR)[2], dnpo[19]);
+                MLA(hi, lo, (*foR)[1], dnpo[17]); MLA(hi, lo, (*foR)[0], dnpo[15]);
+                MLA(hi, lo, (*feR)[0], dnpe[15]); MLA(hi, lo, (*feR)[1], dnpe[17]);
+                MLA(hi, lo, (*feR)[2], dnpe[19]); MLA(hi, lo, (*feR)[3], dnpe[21]);
+                MLA(hi, lo, (*feR)[4], dnpe[23]); MLA(hi, lo, (*feR)[5], dnpe[25]);
+                MLA(hi, lo, (*feR)[6], dnpe[27]); MLA(hi, lo, (*feR)[7], dnpe[29]);
+                out16[p2_idx + 1] = scale_mad_to_16bit(hi,lo);
+
+                ++foL; ++foR;
+            }
+
+            /* ---- sb=16 (Sample 16) ---- */
+            ++Dptr; ptr = *Dptr + po;
+            // L
+            ML0(hi, lo, (*foL)[0], ptr[0]);  MLA(hi, lo, (*foL)[1], ptr[14]);
+            MLA(hi, lo, (*foL)[2], ptr[12]); MLA(hi, lo, (*foL)[3], ptr[10]);
+            MLA(hi, lo, (*foL)[4], ptr[8]);  MLA(hi, lo, (*foL)[5], ptr[6]);
+            MLA(hi, lo, (*foL)[6], ptr[4]);  MLA(hi, lo, (*foL)[7], ptr[2]);
+            out16[16 * 2] = scale_mad_to_16bit(-hi,-lo);
+            // R
+            ML0(hi, lo, (*foR)[0], ptr[0]);  MLA(hi, lo, (*foR)[1], ptr[14]);
+            MLA(hi, lo, (*foR)[2], ptr[12]); MLA(hi, lo, (*foR)[3], ptr[10]);
+            MLA(hi, lo, (*foR)[4], ptr[8]);  MLA(hi, lo, (*foR)[5], ptr[6]);
+            MLA(hi, lo, (*foR)[6], ptr[4]);  MLA(hi, lo, (*foR)[7], ptr[2]);
+            out16[16 * 2 + 1] = scale_mad_to_16bit(-hi,-lo);
+
+            out16 += 64; // 32 samples * 2 channels
+            phase = (phase + 1) % 16;
+        }
+    } else {
+        /* モノラル版は以前提示した内容と同じですが、ここにも完全版を置きます */
+        mad_fixed_t (*filter)[2][2][16][8] = &synth->filter[0];
+        mad_fixed_t const (*sbsample)[36][32] = &frame->sbsample[0];
+        phase = synth->phase;
+
+        for (s = 0; s < ns; ++s) {
+            dct32((*sbsample)[s], phase >> 1, (*filter)[0][phase & 1], (*filter)[1][phase & 1]);
+            pe = phase & ~1; po = ((phase - 1) & 0xf) | 1;
+            register mad_fixed_t (*fe)[8] = &(*filter)[0][phase & 1][0];
+            register mad_fixed_t (*fx)[8] = &(*filter)[0][~phase & 1][0];
+            register mad_fixed_t (*fo)[8] = &(*filter)[1][~phase & 1][0];
+            const mad_fixed_t (*Dptr)[32] = &D[0];
+            const mad_fixed_t *ptr;
+
+            /* sb=0 */
+            ptr = *Dptr + po;
+            ML0(hi, lo, (*fx)[0], ptr[0]);  MLA(hi, lo, (*fx)[1], ptr[14]);
+            MLA(hi, lo, (*fx)[2], ptr[12]); MLA(hi, lo, (*fx)[3], ptr[10]);
+            MLA(hi, lo, (*fx)[4], ptr[8]);  MLA(hi, lo, (*fx)[5], ptr[6]);
+            MLA(hi, lo, (*fx)[6], ptr[4]);  MLA(hi, lo, (*fx)[7], ptr[2]);
+            MLN(hi, lo);
+            ptr = *Dptr + pe;
+            MLA(hi, lo, (*fe)[0], ptr[0]);  MLA(hi, lo, (*fe)[1], ptr[14]);
+            MLA(hi, lo, (*fe)[2], ptr[12]); MLA(hi, lo, (*fe)[3], ptr[10]);
+            MLA(hi, lo, (*fe)[4], ptr[8]);  MLA(hi, lo, (*fe)[5], ptr[6]);
+            MLA(hi, lo, (*fe)[6], ptr[4]);  MLA(hi, lo, (*fe)[7], ptr[2]);
+            out16[0] = scale_mad_to_16bit(hi,lo);
+
+            for (sb = 1; sb < 16; ++sb) {
+                ++fe; ++Dptr;
+                const mad_fixed_t *dpo = *Dptr + po;
+                const mad_fixed_t *dpe = *Dptr + pe;
+                const mad_fixed_t *dnpo = *Dptr - po;
+                const mad_fixed_t *dnpe = *Dptr - pe;
+
+                ML0(hi, lo, (*fo)[0], dpo[0]);   MLA(hi, lo, (*fo)[1], dpo[14]);
+                MLA(hi, lo, (*fo)[2], dpo[12]);  MLA(hi, lo, (*fo)[3], dpo[10]);
+                MLA(hi, lo, (*fo)[4], dpo[8]);   MLA(hi, lo, (*fo)[5], dpo[6]);
+                MLA(hi, lo, (*fo)[6], dpo[4]);   MLA(hi, lo, (*fo)[7], dpo[2]);
+                MLN(hi, lo);
+                MLA(hi, lo, (*fe)[7], dpe[2]);   MLA(hi, lo, (*fe)[6], dpe[4]);
+                MLA(hi, lo, (*fe)[5], dpe[6]);   MLA(hi, lo, (*fe)[4], dpe[8]);
+                MLA(hi, lo, (*fe)[3], dpe[10]);  MLA(hi, lo, (*fe)[2], dpe[12]);
+                MLA(hi, lo, (*fe)[1], dpe[14]);  MLA(hi, lo, (*fe)[0], dpe[0]);
+                out16[sb] = scale_mad_to_16bit(hi,lo);
+
+                ML0(hi, lo, (*fo)[7], dnpo[29]); MLA(hi, lo, (*fo)[6], dnpo[27]);
+                MLA(hi, lo, (*fo)[5], dnpo[25]); MLA(hi, lo, (*fo)[4], dnpo[23]);
+                MLA(hi, lo, (*fo)[3], dnpo[21]); MLA(hi, lo, (*fo)[2], dnpo[19]);
+                MLA(hi, lo, (*fo)[1], dnpo[17]); MLA(hi, lo, (*fo)[0], dnpo[15]);
+                MLA(hi, lo, (*fe)[0], dnpe[15]); MLA(hi, lo, (*fe)[1], dnpe[17]);
+                MLA(hi, lo, (*fe)[2], dnpe[19]); MLA(hi, lo, (*fe)[3], dnpe[21]);
+                MLA(hi, lo, (*fe)[4], dnpe[23]); MLA(hi, lo, (*fe)[5], dnpe[25]);
+                MLA(hi, lo, (*fe)[6], dnpe[27]); MLA(hi, lo, (*fe)[7], dnpe[29]);
+                out16[32 - sb] = scale_mad_to_16bit(hi,lo);
+                ++fo;
+            }
+
+            ++Dptr; ptr = *Dptr + po;
+            ML0(hi, lo, (*fo)[0], ptr[0]);   MLA(hi, lo, (*fo)[1], ptr[14]);
+            MLA(hi, lo, (*fo)[2], ptr[12]);  MLA(hi, lo, (*fo)[3], ptr[10]);
+            MLA(hi, lo, (*fo)[4], ptr[8]);   MLA(hi, lo, (*fo)[5], ptr[6]);
+            MLA(hi, lo, (*fo)[6], ptr[4]);   MLA(hi, lo, (*fo)[7], ptr[2]);
+            out16[16] = scale_mad_to_16bit(-hi,-lo);
+
+            out16 += 32;
+            phase = (phase + 1) % 16;
+        }
+    }
+}
+static void synth_half(struct mad_synth *synth, struct mad_frame const *frame,
+                       unsigned int nch, unsigned int ns)
+{
+    unsigned int phase, s, sb, pe, po;
+    register mad_fixed64hi_t hi;
+    register mad_fixed64lo_t lo;
+    int16_t *out16 = synth->pcm_16bit;
+
+    if (nch == 2) {
+        /* ---- ステレオ専用 LR インターリーブ ---- */
+        mad_fixed_t const (*sbsampleL)[36][32] = &frame->sbsample[0];
+        mad_fixed_t const (*sbsampleR)[36][32] = &frame->sbsample[1];
+        mad_fixed_t (*filterL)[2][2][16][8] = &synth->filter[0];
+        mad_fixed_t (*filterR)[2][2][16][8] = &synth->filter[1];
+        phase = synth->phase;
+
+        for (s = 0; s < ns; ++s) {
+            dct32((*sbsampleL)[s], phase >> 1, (*filterL)[0][phase & 1], (*filterL)[1][phase & 1]);
+            dct32((*sbsampleR)[s], phase >> 1, (*filterR)[0][phase & 1], (*filterR)[1][phase & 1]);
+
+            pe = phase & ~1;
+            po = ((phase - 1) & 0xf) | 1;
+
+            register mad_fixed_t (*feL)[8] = &(*filterL)[0][phase & 1][0];
+            register mad_fixed_t (*fxL)[8] = &(*filterL)[0][~phase & 1][0];
+            register mad_fixed_t (*foL)[8] = &(*filterL)[1][~phase & 1][0];
+            register mad_fixed_t (*feR)[8] = &(*filterR)[0][phase & 1][0];
+            register mad_fixed_t (*fxR)[8] = &(*filterR)[0][~phase & 1][0];
+            register mad_fixed_t (*foR)[8] = &(*filterR)[1][~phase & 1][0];
+
+            const mad_fixed_t (*Dptr)[32] = &D[0];
+            const mad_fixed_t *ptr;
+
+            /* ---- sb=0 (Sample 0) ---- */
+            ptr = *Dptr + po;
+            // L-ch
+            ML0(hi, lo, (*fxL)[0], ptr[0]);  MLA(hi, lo, (*fxL)[1], ptr[14]);
+            MLA(hi, lo, (*fxL)[2], ptr[12]); MLA(hi, lo, (*fxL)[3], ptr[10]);
+            MLA(hi, lo, (*fxL)[4], ptr[8]);  MLA(hi, lo, (*fxL)[5], ptr[6]);
+            MLA(hi, lo, (*fxL)[6], ptr[4]);  MLA(hi, lo, (*fxL)[7], ptr[2]);
+            MLN(hi, lo);
+            ptr = *Dptr + pe;
+            MLA(hi, lo, (*feL)[0], ptr[0]);  MLA(hi, lo, (*feL)[1], ptr[14]);
+            MLA(hi, lo, (*feL)[2], ptr[12]); MLA(hi, lo, (*feL)[3], ptr[10]);
+            MLA(hi, lo, (*feL)[4], ptr[8]);  MLA(hi, lo, (*feL)[5], ptr[6]);
+            MLA(hi, lo, (*feL)[6], ptr[4]);  MLA(hi, lo, (*feL)[7], ptr[2]);
+            out16[0] = scale_mad_to_16bit(hi,lo);
+
+            ptr = *Dptr + po;
+            // R-ch
+            ML0(hi, lo, (*fxR)[0], ptr[0]);  MLA(hi, lo, (*fxR)[1], ptr[14]);
+            MLA(hi, lo, (*fxR)[2], ptr[12]); MLA(hi, lo, (*fxR)[3], ptr[10]);
+            MLA(hi, lo, (*fxR)[4], ptr[8]);  MLA(hi, lo, (*fxR)[5], ptr[6]);
+            MLA(hi, lo, (*fxR)[6], ptr[4]);  MLA(hi, lo, (*fxR)[7], ptr[2]);
+            MLN(hi, lo);
+            ptr = *Dptr + pe;
+            MLA(hi, lo, (*feR)[0], ptr[0]);  MLA(hi, lo, (*feR)[1], ptr[14]);
+            MLA(hi, lo, (*feR)[2], ptr[12]); MLA(hi, lo, (*feR)[3], ptr[10]);
+            MLA(hi, lo, (*feR)[4], ptr[8]);  MLA(hi, lo, (*feR)[5], ptr[6]);
+            MLA(hi, lo, (*feR)[6], ptr[4]);  MLA(hi, lo, (*feR)[7], ptr[2]);
+            out16[1] = scale_mad_to_16bit(hi,lo);
+
+            /* ---- sb=1..15 ---- */
+            for (sb = 1; sb < 16; ++sb) {
+                ++feL; ++feR; ++Dptr;
+                if (!(sb & 1)) {
+                    const mad_fixed_t *dpo = *Dptr + po;
+                    const mad_fixed_t *dpe = *Dptr + pe;
+                    const mad_fixed_t *dnpo = *Dptr - po;
+                    const mad_fixed_t *dnpe = *Dptr - pe;
+                    int idx1 = (sb >> 1) * 2;
+                    int idx2 = (16 - (sb >> 1)) * 2;
+
+                    /* PCM1 (Index idx1) */
+                    // L
+                    ML0(hi, lo, (*foL)[0], dpo[0]);  MLA(hi, lo, (*foL)[1], dpo[14]);
+                    MLA(hi, lo, (*foL)[2], dpo[12]); MLA(hi, lo, (*foL)[3], dpo[10]);
+                    MLA(hi, lo, (*foL)[4], dpo[8]);  MLA(hi, lo, (*foL)[5], dpo[6]);
+                    MLA(hi, lo, (*foL)[6], dpo[4]);  MLA(hi, lo, (*foL)[7], dpo[2]);
+                    MLN(hi, lo);
+                    MLA(hi, lo, (*feL)[7], dpe[2]);  MLA(hi, lo, (*feL)[6], dpe[4]);
+                    MLA(hi, lo, (*feL)[5], dpe[6]);  MLA(hi, lo, (*feL)[4], dpe[8]);
+                    MLA(hi, lo, (*feL)[3], dpe[10]); MLA(hi, lo, (*feL)[2], dpe[12]);
+                    MLA(hi, lo, (*feL)[1], dpe[14]); MLA(hi, lo, (*feL)[0], dpe[0]);
+                    out16[idx1] = scale_mad_to_16bit(hi,lo);
+                    // R
+                    ML0(hi, lo, (*foR)[0], dpo[0]);  MLA(hi, lo, (*foR)[1], dpo[14]);
+                    MLA(hi, lo, (*foR)[2], dpo[12]); MLA(hi, lo, (*foR)[3], dpo[10]);
+                    MLA(hi, lo, (*foR)[4], dpo[8]);  MLA(hi, lo, (*foR)[5], dpo[6]);
+                    MLA(hi, lo, (*foR)[6], dpo[4]);  MLA(hi, lo, (*foR)[7], dpo[2]);
+                    MLN(hi, lo);
+                    MLA(hi, lo, (*feR)[7], dpe[2]);  MLA(hi, lo, (*feR)[6], dpe[4]);
+                    MLA(hi, lo, (*feR)[5], dpe[6]);  MLA(hi, lo, (*feR)[4], dpe[8]);
+                    MLA(hi, lo, (*feR)[3], dpe[10]); MLA(hi, lo, (*feR)[2], dpe[12]);
+                    MLA(hi, lo, (*feR)[1], dpe[14]); MLA(hi, lo, (*feR)[0], dpe[0]);
+                    out16[idx1 + 1] = scale_mad_to_16bit(hi,lo);
+
+                    /* PCM2 (Index idx2) */
+                    // L
+                    ML0(hi, lo, (*foL)[7], dnpo[29]); MLA(hi, lo, (*foL)[6], dnpo[27]);
+                    MLA(hi, lo, (*foL)[5], dnpo[25]); MLA(hi, lo, (*foL)[4], dnpo[23]);
+                    MLA(hi, lo, (*foL)[3], dnpo[21]); MLA(hi, lo, (*foL)[2], dnpo[19]);
+                    MLA(hi, lo, (*foL)[1], dnpo[17]); MLA(hi, lo, (*foL)[0], dnpo[15]);
+                    MLA(hi, lo, (*feL)[0], dnpe[15]); MLA(hi, lo, (*feL)[1], dnpe[17]);
+                    MLA(hi, lo, (*feL)[2], dnpe[19]); MLA(hi, lo, (*feL)[3], dnpe[21]);
+                    MLA(hi, lo, (*feL)[4], dnpe[23]); MLA(hi, lo, (*feL)[5], dnpe[25]);
+                    MLA(hi, lo, (*feL)[6], dnpe[27]); MLA(hi, lo, (*feL)[7], dnpe[29]);
+                    out16[idx2] = scale_mad_to_16bit(hi,lo);
+                    // R
+                    ML0(hi, lo, (*foR)[7], dnpo[29]); MLA(hi, lo, (*foR)[6], dnpo[27]);
+                    MLA(hi, lo, (*foR)[5], dnpo[25]); MLA(hi, lo, (*foR)[4], dnpo[23]);
+                    MLA(hi, lo, (*foR)[3], dnpo[21]); MLA(hi, lo, (*foR)[2], dnpo[19]);
+                    MLA(hi, lo, (*foR)[1], dnpo[17]); MLA(hi, lo, (*foR)[0], dnpo[15]);
+                    MLA(hi, lo, (*feR)[0], dnpe[15]); MLA(hi, lo, (*feR)[1], dnpe[17]);
+                    MLA(hi, lo, (*feR)[2], dnpe[19]); MLA(hi, lo, (*feR)[3], dnpe[21]);
+                    MLA(hi, lo, (*feR)[4], dnpe[23]); MLA(hi, lo, (*feR)[5], dnpe[25]);
+                    MLA(hi, lo, (*feR)[6], dnpe[27]); MLA(hi, lo, (*feR)[7], dnpe[29]);
+                    out16[idx2 + 1] = scale_mad_to_16bit(hi,lo);
+                }
+                ++foL; ++foR;
+            }
+
+            /* ---- sb=16 (Index: 8) ---- */
+            ++Dptr; ptr = *Dptr + po;
+            // L
+            ML0(hi, lo, (*foL)[0], ptr[0]);  MLA(hi, lo, (*foL)[1], ptr[14]);
+            MLA(hi, lo, (*foL)[2], ptr[12]); MLA(hi, lo, (*foL)[3], ptr[10]);
+            MLA(hi, lo, (*foL)[4], ptr[8]);  MLA(hi, lo, (*foL)[5], ptr[6]);
+            MLA(hi, lo, (*foL)[6], ptr[4]);  MLA(hi, lo, (*foL)[7], ptr[2]);
+            out16[8 * 2] = scale_mad_to_16bit(-hi,-lo);
+            // R
+            ML0(hi, lo, (*foR)[0], ptr[0]);  MLA(hi, lo, (*foR)[1], ptr[14]);
+            MLA(hi, lo, (*foR)[2], ptr[12]); MLA(hi, lo, (*foR)[3], ptr[10]);
+            MLA(hi, lo, (*foR)[4], ptr[8]);  MLA(hi, lo, (*foR)[5], ptr[6]);
+            MLA(hi, lo, (*foR)[6], ptr[4]);  MLA(hi, lo, (*foR)[7], ptr[2]);
+            out16[8 * 2 + 1] = scale_mad_to_16bit(-hi,-lo);
+
+            out16 += 32; // 16 samples * 2 channels
+            phase = (phase + 1) % 16;
+        }
+    } else {
+        /* ---- モノラル pure C フォールバック (直接16bit出力) ---- */
+        mad_fixed_t (*filter)[2][2][16][8] = &synth->filter[0];
+        mad_fixed_t const (*sbsample)[36][32] = &frame->sbsample[0]; // 本来 ch=0
+        phase = synth->phase;
+
+        for (s = 0; s < ns; ++s) {
+            dct32((*sbsample)[s], phase >> 1, (*filter)[0][phase & 1], (*filter)[1][phase & 1]);
+            pe = phase & ~1; po = ((phase - 1) & 0xf) | 1;
+            register mad_fixed_t (*fe)[8] = &(*filter)[0][phase & 1][0];
+            register mad_fixed_t (*fx)[8] = &(*filter)[0][~phase & 1][0];
+            register mad_fixed_t (*fo)[8] = &(*filter)[1][~phase & 1][0];
+            const mad_fixed_t (*Dptr)[32] = &D[0];
+            const mad_fixed_t *ptr;
+
+            /* sb=0 */
+            ptr = *Dptr + po;
+            ML0(hi, lo, (*fx)[0], ptr[0]);  MLA(hi, lo, (*fx)[1], ptr[14]);
+            MLA(hi, lo, (*fx)[2], ptr[12]); MLA(hi, lo, (*fx)[3], ptr[10]);
+            MLA(hi, lo, (*fx)[4], ptr[8]);  MLA(hi, lo, (*fx)[5], ptr[6]);
+            MLA(hi, lo, (*fx)[6], ptr[4]);  MLA(hi, lo, (*fx)[7], ptr[2]);
+            MLN(hi, lo);
+            ptr = *Dptr + pe;
+            MLA(hi, lo, (*fe)[0], ptr[0]);  MLA(hi, lo, (*fe)[1], ptr[14]);
+            MLA(hi, lo, (*fe)[2], ptr[12]); MLA(hi, lo, (*fe)[3], ptr[10]);
+            MLA(hi, lo, (*fe)[4], ptr[8]);  MLA(hi, lo, (*fe)[5], ptr[6]);
+            MLA(hi, lo, (*fe)[6], ptr[4]);  MLA(hi, lo, (*fe)[7], ptr[2]);
+            out16[0] = scale_mad_to_16bit(hi,lo);
+
+            /* sb=1..15 */
+            for (sb = 1; sb < 16; ++sb) {
+                ++fe; ++Dptr;
+                if (!(sb & 1)) {
+                    ptr = *Dptr + po;
+                    ML0(hi, lo, (*fo)[0], ptr[0]);   MLA(hi, lo, (*fo)[1], ptr[14]);
+                    MLA(hi, lo, (*fo)[2], ptr[12]);  MLA(hi, lo, (*fo)[3], ptr[10]);
+                    MLA(hi, lo, (*fo)[4], ptr[8]);   MLA(hi, lo, (*fo)[5], ptr[6]);
+                    MLA(hi, lo, (*fo)[6], ptr[4]);   MLA(hi, lo, (*fo)[7], ptr[2]);
+                    MLN(hi, lo);
+                    ptr = *Dptr + pe;
+                    MLA(hi, lo, (*fe)[7], ptr[2]);   MLA(hi, lo, (*fe)[6], ptr[4]);
+                    MLA(hi, lo, (*fe)[5], ptr[6]);   MLA(hi, lo, (*fe)[4], ptr[8]);
+                    MLA(hi, lo, (*fe)[3], ptr[10]);  MLA(hi, lo, (*fe)[2], ptr[12]);
+                    MLA(hi, lo, (*fe)[1], ptr[14]);  MLA(hi, lo, (*fe)[0], ptr[0]);
+                    out16[sb >> 1] = scale_mad_to_16bit(hi,lo);
+
+                    ptr = *Dptr - po;
+                    ML0(hi, lo, (*fo)[7], ptr[29]);  MLA(hi, lo, (*fo)[6], ptr[27]);
+                    MLA(hi, lo, (*fo)[5], ptr[25]);  MLA(hi, lo, (*fo)[4], ptr[23]);
+                    MLA(hi, lo, (*fo)[3], ptr[21]);  MLA(hi, lo, (*fo)[2], ptr[19]);
+                    MLA(hi, lo, (*fo)[1], ptr[17]);  MLA(hi, lo, (*fo)[0], ptr[15]);
+                    ptr = *Dptr - pe;
+                    MLA(hi, lo, (*fe)[0], ptr[15]);  MLA(hi, lo, (*fe)[1], ptr[17]);
+                    MLA(hi, lo, (*fe)[2], ptr[19]);  MLA(hi, lo, (*fe)[3], ptr[21]);
+                    MLA(hi, lo, (*fe)[4], ptr[23]);  MLA(hi, lo, (*fe)[5], ptr[25]);
+                    MLA(hi, lo, (*fe)[6], ptr[27]);  MLA(hi, lo, (*fe)[7], ptr[29]);
+                    out16[16 - (sb >> 1)] = scale_mad_to_16bit(hi,lo);
+                }
+                ++fo;
+            }
+
+            /* sb=16 */
+            ++Dptr; ptr = *Dptr + po;
+            ML0(hi, lo, (*fo)[0], ptr[0]);   MLA(hi, lo, (*fo)[1], ptr[14]);
+            MLA(hi, lo, (*fo)[2], ptr[12]);  MLA(hi, lo, (*fo)[3], ptr[10]);
+            MLA(hi, lo, (*fo)[4], ptr[8]);   MLA(hi, lo, (*fo)[5], ptr[6]);
+            MLA(hi, lo, (*fo)[6], ptr[4]);   MLA(hi, lo, (*fo)[7], ptr[2]);
+            out16[8] = scale_mad_to_16bit(-hi,-lo);
+
+            out16 += 16;
+            phase = (phase + 1) % 16;
+        }
+    }
+}
+
+#elif __OPT_X68K_INTERLEAVED__
+/* ===============================================================
+ * synth_full
+ *
+ * nch==2 専用 LR インターリーブ版:
+ *   L と R の変数を並べて宣言し、sbループ内で交互に処理する。
+ *   L 側の MLA 依存チェーンのストール中に R 側の命令を
+ *   GCC スケジューラが埋めやすくなる。
+ *
+ * nch==1 (モノラル) はフォールバックとして従来のループを使う。
+ * =============================================================== */
+static
+void synth_full(struct mad_synth *synth, struct mad_frame const *frame,
+		unsigned int nch, unsigned int ns)
+{
+  unsigned int phase, s, sb, pe, po;
+  register mad_fixed64hi_t hi;
+  register mad_fixed64lo_t lo;
+
+  if (nch == 2) {
+    /* ---- ステレオ専用 LR インターリーブ ---- */
+    mad_fixed_t const (*sbsampleL)[36][32], (*sbsampleR)[36][32];
+    mad_fixed_t (*filterL)[2][2][16][8], (*filterR)[2][2][16][8];
+    mad_fixed_t *pcm1L, *pcm2L, *pcm1R, *pcm2R;
+    register mad_fixed_t (*feL)[8], (*fxL)[8], (*foL)[8];
+    register mad_fixed_t (*feR)[8], (*fxR)[8], (*foR)[8];
+    register mad_fixed_t const (*Dptr)[32], *ptr;
+
+    sbsampleL = &frame->sbsample[0];
+    sbsampleR = &frame->sbsample[1];
+    filterL   = &synth->filter[0];
+    filterR   = &synth->filter[1];
+    phase     = synth->phase;
+    pcm1L     = synth->pcm.samples[0];
+    pcm1R     = synth->pcm.samples[1];
+
+    for (s = 0; s < ns; ++s) {
+      /* L/R 両チャンネルの DCT を先に実行 */
+      dct32((*sbsampleL)[s], phase >> 1,
+	    (*filterL)[0][phase & 1], (*filterL)[1][phase & 1]);
+      dct32((*sbsampleR)[s], phase >> 1,
+	    (*filterR)[0][phase & 1], (*filterR)[1][phase & 1]);
+
+      pe = phase & ~1;
+      po = ((phase - 1) & 0xf) | 1;
+
+      feL = &(*filterL)[0][ phase & 1][0];
+      fxL = &(*filterL)[0][~phase & 1][0];
+      foL = &(*filterL)[1][~phase & 1][0];
+      feR = &(*filterR)[0][ phase & 1][0];
+      fxR = &(*filterR)[0][~phase & 1][0];
+      foR = &(*filterR)[1][~phase & 1][0];
+
+      Dptr = &D[0];
+
+      /* ---- sb=0 L ---- */
+      ptr = *Dptr + po;
+      ML0(hi, lo, (*fxL)[0], ptr[ 0]);
+      MLA(hi, lo, (*fxL)[1], ptr[14]);
+      MLA(hi, lo, (*fxL)[2], ptr[12]);
+      MLA(hi, lo, (*fxL)[3], ptr[10]);
+      MLA(hi, lo, (*fxL)[4], ptr[ 8]);
+      MLA(hi, lo, (*fxL)[5], ptr[ 6]);
+      MLA(hi, lo, (*fxL)[6], ptr[ 4]);
+      MLA(hi, lo, (*fxL)[7], ptr[ 2]);
+      MLN(hi, lo);
+      ptr = *Dptr + pe;
+      MLA(hi, lo, (*feL)[0], ptr[ 0]);
+      MLA(hi, lo, (*feL)[1], ptr[14]);
+      MLA(hi, lo, (*feL)[2], ptr[12]);
+      MLA(hi, lo, (*feL)[3], ptr[10]);
+      MLA(hi, lo, (*feL)[4], ptr[ 8]);
+      MLA(hi, lo, (*feL)[5], ptr[ 6]);
+      MLA(hi, lo, (*feL)[6], ptr[ 4]);
+      MLA(hi, lo, (*feL)[7], ptr[ 2]);
+      *pcm1L++ = SHIFT(MLZ(hi, lo));
+
+      /* ---- sb=0 R ---- */
+      ptr = *Dptr + po;
+      ML0(hi, lo, (*fxR)[0], ptr[ 0]);
+      MLA(hi, lo, (*fxR)[1], ptr[14]);
+      MLA(hi, lo, (*fxR)[2], ptr[12]);
+      MLA(hi, lo, (*fxR)[3], ptr[10]);
+      MLA(hi, lo, (*fxR)[4], ptr[ 8]);
+      MLA(hi, lo, (*fxR)[5], ptr[ 6]);
+      MLA(hi, lo, (*fxR)[6], ptr[ 4]);
+      MLA(hi, lo, (*fxR)[7], ptr[ 2]);
+      MLN(hi, lo);
+      ptr = *Dptr + pe;
+      MLA(hi, lo, (*feR)[0], ptr[ 0]);
+      MLA(hi, lo, (*feR)[1], ptr[14]);
+      MLA(hi, lo, (*feR)[2], ptr[12]);
+      MLA(hi, lo, (*feR)[3], ptr[10]);
+      MLA(hi, lo, (*feR)[4], ptr[ 8]);
+      MLA(hi, lo, (*feR)[5], ptr[ 6]);
+      MLA(hi, lo, (*feR)[6], ptr[ 4]);
+      MLA(hi, lo, (*feR)[7], ptr[ 2]);
+      *pcm1R++ = SHIFT(MLZ(hi, lo));
+
+      pcm2L = pcm1L + 30;
+      pcm2R = pcm1R + 30;
+
+      /* ---- sb=1..15: L と R を交互に処理 ---- */
+      for (sb = 1; sb < 16; ++sb) {
+        ++feL; ++feR;
+        ++Dptr;
+
+        {
+          const mad_fixed_t *dpo  = *Dptr + po;
+          const mad_fixed_t *dpe  = *Dptr + pe;
+          const mad_fixed_t *dnpo = *Dptr - po;
+          const mad_fixed_t *dnpe = *Dptr - pe;
+          mad_fixed_t resL, resR;
+
+          /* pcm1 L / R */
+          ML0(hi, lo, (*foL)[0], dpo[ 0]);
+          MLA(hi, lo, (*foL)[1], dpo[14]);
+          MLA(hi, lo, (*foL)[2], dpo[12]);
+          MLA(hi, lo, (*foL)[3], dpo[10]);
+          MLA(hi, lo, (*foL)[4], dpo[ 8]);
+          MLA(hi, lo, (*foL)[5], dpo[ 6]);
+          MLA(hi, lo, (*foL)[6], dpo[ 4]);
+          MLA(hi, lo, (*foL)[7], dpo[ 2]);
+          MLN(hi, lo);
+          MLA(hi, lo, (*feL)[7], dpe[ 2]);
+          MLA(hi, lo, (*feL)[6], dpe[ 4]);
+          MLA(hi, lo, (*feL)[5], dpe[ 6]);
+          MLA(hi, lo, (*feL)[4], dpe[ 8]);
+          MLA(hi, lo, (*feL)[3], dpe[10]);
+          MLA(hi, lo, (*feL)[2], dpe[12]);
+          MLA(hi, lo, (*feL)[1], dpe[14]);
+          MLA(hi, lo, (*feL)[0], dpe[ 0]);
+          resL = SHIFT(MLZ(hi, lo));
+
+          ML0(hi, lo, (*foR)[0], dpo[ 0]);
+          MLA(hi, lo, (*foR)[1], dpo[14]);
+          MLA(hi, lo, (*foR)[2], dpo[12]);
+          MLA(hi, lo, (*foR)[3], dpo[10]);
+          MLA(hi, lo, (*foR)[4], dpo[ 8]);
+          MLA(hi, lo, (*foR)[5], dpo[ 6]);
+          MLA(hi, lo, (*foR)[6], dpo[ 4]);
+          MLA(hi, lo, (*foR)[7], dpo[ 2]);
+          MLN(hi, lo);
+          MLA(hi, lo, (*feR)[7], dpe[ 2]);
+          MLA(hi, lo, (*feR)[6], dpe[ 4]);
+          MLA(hi, lo, (*feR)[5], dpe[ 6]);
+          MLA(hi, lo, (*feR)[4], dpe[ 8]);
+          MLA(hi, lo, (*feR)[3], dpe[10]);
+          MLA(hi, lo, (*feR)[2], dpe[12]);
+          MLA(hi, lo, (*feR)[1], dpe[14]);
+          MLA(hi, lo, (*feR)[0], dpe[ 0]);
+          resR = SHIFT(MLZ(hi, lo));
+
+          *pcm1L++ = resL;
+          *pcm1R++ = resR;
+
+          /* pcm2 L / R */
+          ML0(hi, lo, (*foL)[7], dnpo[29]);
+          MLA(hi, lo, (*foL)[6], dnpo[27]);
+          MLA(hi, lo, (*foL)[5], dnpo[25]);
+          MLA(hi, lo, (*foL)[4], dnpo[23]);
+          MLA(hi, lo, (*foL)[3], dnpo[21]);
+          MLA(hi, lo, (*foL)[2], dnpo[19]);
+          MLA(hi, lo, (*foL)[1], dnpo[17]);
+          MLA(hi, lo, (*foL)[0], dnpo[15]);
+          MLA(hi, lo, (*feL)[0], dnpe[15]);
+          MLA(hi, lo, (*feL)[1], dnpe[17]);
+          MLA(hi, lo, (*feL)[2], dnpe[19]);
+          MLA(hi, lo, (*feL)[3], dnpe[21]);
+          MLA(hi, lo, (*feL)[4], dnpe[23]);
+          MLA(hi, lo, (*feL)[5], dnpe[25]);
+          MLA(hi, lo, (*feL)[6], dnpe[27]);
+          MLA(hi, lo, (*feL)[7], dnpe[29]);
+          resL = SHIFT(MLZ(hi, lo));
+
+          ML0(hi, lo, (*foR)[7], dnpo[29]);
+          MLA(hi, lo, (*foR)[6], dnpo[27]);
+          MLA(hi, lo, (*foR)[5], dnpo[25]);
+          MLA(hi, lo, (*foR)[4], dnpo[23]);
+          MLA(hi, lo, (*foR)[3], dnpo[21]);
+          MLA(hi, lo, (*foR)[2], dnpo[19]);
+          MLA(hi, lo, (*foR)[1], dnpo[17]);
+          MLA(hi, lo, (*foR)[0], dnpo[15]);
+          MLA(hi, lo, (*feR)[0], dnpe[15]);
+          MLA(hi, lo, (*feR)[1], dnpe[17]);
+          MLA(hi, lo, (*feR)[2], dnpe[19]);
+          MLA(hi, lo, (*feR)[3], dnpe[21]);
+          MLA(hi, lo, (*feR)[4], dnpe[23]);
+          MLA(hi, lo, (*feR)[5], dnpe[25]);
+          MLA(hi, lo, (*feR)[6], dnpe[27]);
+          MLA(hi, lo, (*feR)[7], dnpe[29]);
+          resR = SHIFT(MLZ(hi, lo));
+
+          *pcm2L-- = resL;
+          *pcm2R-- = resR;
+        }
+
+        ++foL; ++foR;
+      }
+
+      /* ---- sb=16 L ---- */
+      ++Dptr;
+      ptr = *Dptr + po;
+      ML0(hi, lo, (*foL)[0], ptr[ 0]);
+      MLA(hi, lo, (*foL)[1], ptr[14]);
+      MLA(hi, lo, (*foL)[2], ptr[12]);
+      MLA(hi, lo, (*foL)[3], ptr[10]);
+      MLA(hi, lo, (*foL)[4], ptr[ 8]);
+      MLA(hi, lo, (*foL)[5], ptr[ 6]);
+      MLA(hi, lo, (*foL)[6], ptr[ 4]);
+      MLA(hi, lo, (*foL)[7], ptr[ 2]);
+      *pcm1L = SHIFT(-MLZ(hi, lo));
+      pcm1L += 16;
+
+      /* ---- sb=16 R ---- */
+      ML0(hi, lo, (*foR)[0], ptr[ 0]);
+      MLA(hi, lo, (*foR)[1], ptr[14]);
+      MLA(hi, lo, (*foR)[2], ptr[12]);
+      MLA(hi, lo, (*foR)[3], ptr[10]);
+      MLA(hi, lo, (*foR)[4], ptr[ 8]);
+      MLA(hi, lo, (*foR)[5], ptr[ 6]);
+      MLA(hi, lo, (*foR)[6], ptr[ 4]);
+      MLA(hi, lo, (*foR)[7], ptr[ 2]);
+      *pcm1R = SHIFT(-MLZ(hi, lo));
+      pcm1R += 16;
+
+      phase = (phase + 1) % 16;
+    }
+
+  } else {
+    /* ---- モノラル フォールバック ---- */
+    mad_fixed_t *pcm1, *pcm2, (*filter)[2][2][16][8];
+    mad_fixed_t const (*sbsample)[36][32];
+    register mad_fixed_t (*fe)[8], (*fx)[8], (*fo)[8];
+    register mad_fixed_t const (*Dptr)[32], *ptr;
+
+    sbsample = &frame->sbsample[0];
+    filter   = &synth->filter[0];
+    phase    = synth->phase;
+    pcm1     = synth->pcm.samples[0];
+
+    for (s = 0; s < ns; ++s) {
+      dct32((*sbsample)[s], phase >> 1,
+	    (*filter)[0][phase & 1], (*filter)[1][phase & 1]);
+
+      pe = phase & ~1;
+      po = ((phase - 1) & 0xf) | 1;
+
+      fe = &(*filter)[0][ phase & 1][0];
+      fx = &(*filter)[0][~phase & 1][0];
+      fo = &(*filter)[1][~phase & 1][0];
+
+      Dptr = &D[0];
+
+      ptr = *Dptr + po;
+      ML0(hi, lo, (*fx)[0], ptr[ 0]);
+      MLA(hi, lo, (*fx)[1], ptr[14]);
+      MLA(hi, lo, (*fx)[2], ptr[12]);
+      MLA(hi, lo, (*fx)[3], ptr[10]);
+      MLA(hi, lo, (*fx)[4], ptr[ 8]);
+      MLA(hi, lo, (*fx)[5], ptr[ 6]);
+      MLA(hi, lo, (*fx)[6], ptr[ 4]);
+      MLA(hi, lo, (*fx)[7], ptr[ 2]);
+      MLN(hi, lo);
+      ptr = *Dptr + pe;
+      MLA(hi, lo, (*fe)[0], ptr[ 0]);
+      MLA(hi, lo, (*fe)[1], ptr[14]);
+      MLA(hi, lo, (*fe)[2], ptr[12]);
+      MLA(hi, lo, (*fe)[3], ptr[10]);
+      MLA(hi, lo, (*fe)[4], ptr[ 8]);
+      MLA(hi, lo, (*fe)[5], ptr[ 6]);
+      MLA(hi, lo, (*fe)[6], ptr[ 4]);
+      MLA(hi, lo, (*fe)[7], ptr[ 2]);
+      *pcm1++ = SHIFT(MLZ(hi, lo));
+
+      pcm2 = pcm1 + 30;
+
+ 
+      for (sb = 1; sb < 16; ++sb) {
+        ++fe;
+        ++Dptr;
+
+        /* D[32 - sb][i] == -D[sb][31 - i] */
+
+        ptr = *Dptr + po;
+        ML0(hi, lo, (*fo)[0], ptr[ 0]);
+        MLA(hi, lo, (*fo)[1], ptr[14]);
+        MLA(hi, lo, (*fo)[2], ptr[12]);
+        MLA(hi, lo, (*fo)[3], ptr[10]);
+        MLA(hi, lo, (*fo)[4], ptr[ 8]);
+        MLA(hi, lo, (*fo)[5], ptr[ 6]);
+        MLA(hi, lo, (*fo)[6], ptr[ 4]);
+        MLA(hi, lo, (*fo)[7], ptr[ 2]);
+        MLN(hi, lo);
+
+        ptr = *Dptr + pe;
+        MLA(hi, lo, (*fe)[7], ptr[ 2]);
+        MLA(hi, lo, (*fe)[6], ptr[ 4]);
+        MLA(hi, lo, (*fe)[5], ptr[ 6]);
+        MLA(hi, lo, (*fe)[4], ptr[ 8]);
+        MLA(hi, lo, (*fe)[3], ptr[10]);
+        MLA(hi, lo, (*fe)[2], ptr[12]);
+        MLA(hi, lo, (*fe)[1], ptr[14]);
+        MLA(hi, lo, (*fe)[0], ptr[ 0]);
+
+        *pcm1++ = SHIFT(MLZ(hi, lo));
+
+        ptr = *Dptr - pe;
+        ML0(hi, lo, (*fe)[0], ptr[31 - 16]);
+        MLA(hi, lo, (*fe)[1], ptr[31 - 14]);
+        MLA(hi, lo, (*fe)[2], ptr[31 - 12]);
+        MLA(hi, lo, (*fe)[3], ptr[31 - 10]);
+        MLA(hi, lo, (*fe)[4], ptr[31 -  8]);
+        MLA(hi, lo, (*fe)[5], ptr[31 -  6]);
+        MLA(hi, lo, (*fe)[6], ptr[31 -  4]);
+        MLA(hi, lo, (*fe)[7], ptr[31 -  2]);
+
+        ptr = *Dptr - po;
+        MLA(hi, lo, (*fo)[7], ptr[31 -  2]);
+        MLA(hi, lo, (*fo)[6], ptr[31 -  4]);
+        MLA(hi, lo, (*fo)[5], ptr[31 -  6]);
+        MLA(hi, lo, (*fo)[4], ptr[31 -  8]);
+        MLA(hi, lo, (*fo)[3], ptr[31 - 10]);
+        MLA(hi, lo, (*fo)[2], ptr[31 - 12]);
+        MLA(hi, lo, (*fo)[1], ptr[31 - 14]);
+        MLA(hi, lo, (*fo)[0], ptr[31 - 16]);
+
+        *pcm2-- = SHIFT(MLZ(hi, lo));
+
+        ++fo;
+      }
+
+      ++Dptr;
+      ptr = *Dptr + po;
+      ML0(hi, lo, (*fo)[0], ptr[ 0]);
+      MLA(hi, lo, (*fo)[1], ptr[14]);
+      MLA(hi, lo, (*fo)[2], ptr[12]);
+      MLA(hi, lo, (*fo)[3], ptr[10]);
+      MLA(hi, lo, (*fo)[4], ptr[ 8]);
+      MLA(hi, lo, (*fo)[5], ptr[ 6]);
+      MLA(hi, lo, (*fo)[6], ptr[ 4]);
+      MLA(hi, lo, (*fo)[7], ptr[ 2]);
+      *pcm1 = SHIFT(-MLZ(hi, lo));
+      pcm1 += 16;
+
+      phase = (phase + 1) % 16;
+    }
+  }
+}
+
+/* ===============================================================
+ * synth_half
+ *
+ * nch==2 専用 LR インターリーブ版:
+ *   偶数 sb のみ出力 (!(sb & 1))。
+ *   pcm2 = pcm1 + 14、最後 pcm1 += 8。
+ *   L/R の dpo/dpe/dnpo/dnpe は共用。
+ *
+ * nch==1 (モノラル) は pure C フォールバック。
+ * =============================================================== */
+static
+void synth_half(struct mad_synth *synth, struct mad_frame const *frame,
+		unsigned int nch, unsigned int ns)
+{
+  unsigned int phase, s, sb, pe, po;
+  register mad_fixed64hi_t hi;
+  register mad_fixed64lo_t lo;
+
+  if (nch == 2) {
+    /* ---- ステレオ専用 LR インターリーブ ---- */
+    mad_fixed_t const (*sbsampleL)[36][32], (*sbsampleR)[36][32];
+    mad_fixed_t (*filterL)[2][2][16][8], (*filterR)[2][2][16][8];
+    mad_fixed_t *pcm1L, *pcm2L, *pcm1R, *pcm2R;
+    register mad_fixed_t (*feL)[8], (*fxL)[8], (*foL)[8];
+    register mad_fixed_t (*feR)[8], (*fxR)[8], (*foR)[8];
+    register mad_fixed_t const (*Dptr)[32], *ptr;
+
+    sbsampleL = &frame->sbsample[0];
+    sbsampleR = &frame->sbsample[1];
+    filterL   = &synth->filter[0];
+    filterR   = &synth->filter[1];
+    phase     = synth->phase;
+    pcm1L     = synth->pcm.samples[0];
+    pcm1R     = synth->pcm.samples[1];
+
+    for (s = 0; s < ns; ++s) {
+      dct32((*sbsampleL)[s], phase >> 1,
+	    (*filterL)[0][phase & 1], (*filterL)[1][phase & 1]);
+      dct32((*sbsampleR)[s], phase >> 1,
+	    (*filterR)[0][phase & 1], (*filterR)[1][phase & 1]);
+
+      pe = phase & ~1;
+      po = ((phase - 1) & 0xf) | 1;
+
+      feL = &(*filterL)[0][ phase & 1][0];
+      fxL = &(*filterL)[0][~phase & 1][0];
+      foL = &(*filterL)[1][~phase & 1][0];
+      feR = &(*filterR)[0][ phase & 1][0];
+      fxR = &(*filterR)[0][~phase & 1][0];
+      foR = &(*filterR)[1][~phase & 1][0];
+
+      Dptr = &D[0];
+
+      /* ---- sb=0 L ---- */
+      ptr = *Dptr + po;
+      ML0(hi, lo, (*fxL)[0], ptr[ 0]);
+      MLA(hi, lo, (*fxL)[1], ptr[14]);
+      MLA(hi, lo, (*fxL)[2], ptr[12]);
+      MLA(hi, lo, (*fxL)[3], ptr[10]);
+      MLA(hi, lo, (*fxL)[4], ptr[ 8]);
+      MLA(hi, lo, (*fxL)[5], ptr[ 6]);
+      MLA(hi, lo, (*fxL)[6], ptr[ 4]);
+      MLA(hi, lo, (*fxL)[7], ptr[ 2]);
+      MLN(hi, lo);
+      ptr = *Dptr + pe;
+      MLA(hi, lo, (*feL)[0], ptr[ 0]);
+      MLA(hi, lo, (*feL)[1], ptr[14]);
+      MLA(hi, lo, (*feL)[2], ptr[12]);
+      MLA(hi, lo, (*feL)[3], ptr[10]);
+      MLA(hi, lo, (*feL)[4], ptr[ 8]);
+      MLA(hi, lo, (*feL)[5], ptr[ 6]);
+      MLA(hi, lo, (*feL)[6], ptr[ 4]);
+      MLA(hi, lo, (*feL)[7], ptr[ 2]);
+      *pcm1L++ = SHIFT(MLZ(hi, lo));
+
+      /* ---- sb=0 R ---- */
+      ptr = *Dptr + po;
+      ML0(hi, lo, (*fxR)[0], ptr[ 0]);
+      MLA(hi, lo, (*fxR)[1], ptr[14]);
+      MLA(hi, lo, (*fxR)[2], ptr[12]);
+      MLA(hi, lo, (*fxR)[3], ptr[10]);
+      MLA(hi, lo, (*fxR)[4], ptr[ 8]);
+      MLA(hi, lo, (*fxR)[5], ptr[ 6]);
+      MLA(hi, lo, (*fxR)[6], ptr[ 4]);
+      MLA(hi, lo, (*fxR)[7], ptr[ 2]);
+      MLN(hi, lo);
+      ptr = *Dptr + pe;
+      MLA(hi, lo, (*feR)[0], ptr[ 0]);
+      MLA(hi, lo, (*feR)[1], ptr[14]);
+      MLA(hi, lo, (*feR)[2], ptr[12]);
+      MLA(hi, lo, (*feR)[3], ptr[10]);
+      MLA(hi, lo, (*feR)[4], ptr[ 8]);
+      MLA(hi, lo, (*feR)[5], ptr[ 6]);
+      MLA(hi, lo, (*feR)[6], ptr[ 4]);
+      MLA(hi, lo, (*feR)[7], ptr[ 2]);
+      *pcm1R++ = SHIFT(MLZ(hi, lo));
+
+      pcm2L = pcm1L + 14;
+      pcm2R = pcm1R + 14;
+
+      /* ---- sb=1..15 ---- */
+      for (sb = 1; sb < 16; ++sb) {
+        ++feL; ++feR;
+        ++Dptr;
+
+        if (!(sb & 1)) {
+          const mad_fixed_t *dpo  = *Dptr + po;
+          const mad_fixed_t *dpe  = *Dptr + pe;
+          const mad_fixed_t *dnpo = *Dptr - po;
+          const mad_fixed_t *dnpe = *Dptr - pe;
+          mad_fixed_t resL, resR;
+
+          /* pcm1 L */
+          ML0(hi, lo, (*foL)[0], dpo[ 0]);
+          MLA(hi, lo, (*foL)[1], dpo[14]);
+          MLA(hi, lo, (*foL)[2], dpo[12]);
+          MLA(hi, lo, (*foL)[3], dpo[10]);
+          MLA(hi, lo, (*foL)[4], dpo[ 8]);
+          MLA(hi, lo, (*foL)[5], dpo[ 6]);
+          MLA(hi, lo, (*foL)[6], dpo[ 4]);
+          MLA(hi, lo, (*foL)[7], dpo[ 2]);
+          MLN(hi, lo);
+          MLA(hi, lo, (*feL)[7], dpe[ 2]);
+          MLA(hi, lo, (*feL)[6], dpe[ 4]);
+          MLA(hi, lo, (*feL)[5], dpe[ 6]);
+          MLA(hi, lo, (*feL)[4], dpe[ 8]);
+          MLA(hi, lo, (*feL)[3], dpe[10]);
+          MLA(hi, lo, (*feL)[2], dpe[12]);
+          MLA(hi, lo, (*feL)[1], dpe[14]);
+          MLA(hi, lo, (*feL)[0], dpe[ 0]);
+          resL = SHIFT(MLZ(hi, lo));
+
+          /* pcm1 R */
+          ML0(hi, lo, (*foR)[0], dpo[ 0]);
+          MLA(hi, lo, (*foR)[1], dpo[14]);
+          MLA(hi, lo, (*foR)[2], dpo[12]);
+          MLA(hi, lo, (*foR)[3], dpo[10]);
+          MLA(hi, lo, (*foR)[4], dpo[ 8]);
+          MLA(hi, lo, (*foR)[5], dpo[ 6]);
+          MLA(hi, lo, (*foR)[6], dpo[ 4]);
+          MLA(hi, lo, (*foR)[7], dpo[ 2]);
+          MLN(hi, lo);
+          MLA(hi, lo, (*feR)[7], dpe[ 2]);
+          MLA(hi, lo, (*feR)[6], dpe[ 4]);
+          MLA(hi, lo, (*feR)[5], dpe[ 6]);
+          MLA(hi, lo, (*feR)[4], dpe[ 8]);
+          MLA(hi, lo, (*feR)[3], dpe[10]);
+          MLA(hi, lo, (*feR)[2], dpe[12]);
+          MLA(hi, lo, (*feR)[1], dpe[14]);
+          MLA(hi, lo, (*feR)[0], dpe[ 0]);
+          resR = SHIFT(MLZ(hi, lo));
+
+          *pcm1L++ = resL;
+          *pcm1R++ = resR;
+
+          /* pcm2 L */
+          ML0(hi, lo, (*foL)[7], dnpo[29]);
+          MLA(hi, lo, (*foL)[6], dnpo[27]);
+          MLA(hi, lo, (*foL)[5], dnpo[25]);
+          MLA(hi, lo, (*foL)[4], dnpo[23]);
+          MLA(hi, lo, (*foL)[3], dnpo[21]);
+          MLA(hi, lo, (*foL)[2], dnpo[19]);
+          MLA(hi, lo, (*foL)[1], dnpo[17]);
+          MLA(hi, lo, (*foL)[0], dnpo[15]);
+          MLA(hi, lo, (*feL)[0], dnpe[15]);
+          MLA(hi, lo, (*feL)[1], dnpe[17]);
+          MLA(hi, lo, (*feL)[2], dnpe[19]);
+          MLA(hi, lo, (*feL)[3], dnpe[21]);
+          MLA(hi, lo, (*feL)[4], dnpe[23]);
+          MLA(hi, lo, (*feL)[5], dnpe[25]);
+          MLA(hi, lo, (*feL)[6], dnpe[27]);
+          MLA(hi, lo, (*feL)[7], dnpe[29]);
+          resL = SHIFT(MLZ(hi, lo));
+
+          /* pcm2 R */
+          ML0(hi, lo, (*foR)[7], dnpo[29]);
+          MLA(hi, lo, (*foR)[6], dnpo[27]);
+          MLA(hi, lo, (*foR)[5], dnpo[25]);
+          MLA(hi, lo, (*foR)[4], dnpo[23]);
+          MLA(hi, lo, (*foR)[3], dnpo[21]);
+          MLA(hi, lo, (*foR)[2], dnpo[19]);
+          MLA(hi, lo, (*foR)[1], dnpo[17]);
+          MLA(hi, lo, (*foR)[0], dnpo[15]);
+          MLA(hi, lo, (*feR)[0], dnpe[15]);
+          MLA(hi, lo, (*feR)[1], dnpe[17]);
+          MLA(hi, lo, (*feR)[2], dnpe[19]);
+          MLA(hi, lo, (*feR)[3], dnpe[21]);
+          MLA(hi, lo, (*feR)[4], dnpe[23]);
+          MLA(hi, lo, (*feR)[5], dnpe[25]);
+          MLA(hi, lo, (*feR)[6], dnpe[27]);
+          MLA(hi, lo, (*feR)[7], dnpe[29]);
+          resR = SHIFT(MLZ(hi, lo));
+
+          *pcm2L-- = resL;
+          *pcm2R-- = resR;
+        }
+
+        ++foL; ++foR;
+      }
+
+      /* ---- sb=16 L ---- */
+      ++Dptr;
+      ptr = *Dptr + po;
+      ML0(hi, lo, (*foL)[0], ptr[ 0]);
+      MLA(hi, lo, (*foL)[1], ptr[14]);
+      MLA(hi, lo, (*foL)[2], ptr[12]);
+      MLA(hi, lo, (*foL)[3], ptr[10]);
+      MLA(hi, lo, (*foL)[4], ptr[ 8]);
+      MLA(hi, lo, (*foL)[5], ptr[ 6]);
+      MLA(hi, lo, (*foL)[6], ptr[ 4]);
+      MLA(hi, lo, (*foL)[7], ptr[ 2]);
+      *pcm1L = SHIFT(-MLZ(hi, lo));
+      pcm1L += 8;
+
+      /* ---- sb=16 R ---- */
+      ML0(hi, lo, (*foR)[0], ptr[ 0]);
+      MLA(hi, lo, (*foR)[1], ptr[14]);
+      MLA(hi, lo, (*foR)[2], ptr[12]);
+      MLA(hi, lo, (*foR)[3], ptr[10]);
+      MLA(hi, lo, (*foR)[4], ptr[ 8]);
+      MLA(hi, lo, (*foR)[5], ptr[ 6]);
+      MLA(hi, lo, (*foR)[6], ptr[ 4]);
+      MLA(hi, lo, (*foR)[7], ptr[ 2]);
+      *pcm1R = SHIFT(-MLZ(hi, lo));
+      pcm1R += 8;
+
+      phase = (phase + 1) % 16;
+    }
+
+  } else {
+    /* ---- モノラル pure C フォールバック ---- */
+    unsigned int ch;
+    for (ch = 0; ch < nch; ++ch) {
+      mad_fixed_t *pcm1, *pcm2, (*filter)[2][2][16][8];
+      mad_fixed_t const (*sbsample)[36][32];
+      register mad_fixed_t (*fe)[8], (*fx)[8], (*fo)[8];
+      register mad_fixed_t const (*Dptr)[32], *ptr;
+
+      sbsample = &frame->sbsample[ch];
+      filter   = &synth->filter[ch];
+      phase    = synth->phase;
+      pcm1     = synth->pcm.samples[ch];
+
+      for (s = 0; s < ns; ++s) {
+        dct32((*sbsample)[s], phase >> 1,
+              (*filter)[0][phase & 1], (*filter)[1][phase & 1]);
+
+        pe = phase & ~1;
+        po = ((phase - 1) & 0xf) | 1;
+
+        fe = &(*filter)[0][ phase & 1][0];
+        fx = &(*filter)[0][~phase & 1][0];
+        fo = &(*filter)[1][~phase & 1][0];
+
+        Dptr = &D[0];
+
+        ptr = *Dptr + po;
+        ML0(hi, lo, (*fx)[0], ptr[ 0]);
+        MLA(hi, lo, (*fx)[1], ptr[14]);
+        MLA(hi, lo, (*fx)[2], ptr[12]);
+        MLA(hi, lo, (*fx)[3], ptr[10]);
+        MLA(hi, lo, (*fx)[4], ptr[ 8]);
+        MLA(hi, lo, (*fx)[5], ptr[ 6]);
+        MLA(hi, lo, (*fx)[6], ptr[ 4]);
+        MLA(hi, lo, (*fx)[7], ptr[ 2]);
+        MLN(hi, lo);
+        ptr = *Dptr + pe;
+        MLA(hi, lo, (*fe)[0], ptr[ 0]);
+        MLA(hi, lo, (*fe)[1], ptr[14]);
+        MLA(hi, lo, (*fe)[2], ptr[12]);
+        MLA(hi, lo, (*fe)[3], ptr[10]);
+        MLA(hi, lo, (*fe)[4], ptr[ 8]);
+        MLA(hi, lo, (*fe)[5], ptr[ 6]);
+        MLA(hi, lo, (*fe)[6], ptr[ 4]);
+        MLA(hi, lo, (*fe)[7], ptr[ 2]);
+        *pcm1++ = SHIFT(MLZ(hi, lo));
+
+        pcm2 = pcm1 + 14;
+
+        for (sb = 1; sb < 16; ++sb) {
+          ++fe;
+          ++Dptr;
+
+          if (!(sb & 1)) {
+            ptr = *Dptr + po;
+            ML0(hi, lo, (*fo)[0], ptr[ 0]);
+            MLA(hi, lo, (*fo)[1], ptr[14]);
+            MLA(hi, lo, (*fo)[2], ptr[12]);
+            MLA(hi, lo, (*fo)[3], ptr[10]);
+            MLA(hi, lo, (*fo)[4], ptr[ 8]);
+            MLA(hi, lo, (*fo)[5], ptr[ 6]);
+            MLA(hi, lo, (*fo)[6], ptr[ 4]);
+            MLA(hi, lo, (*fo)[7], ptr[ 2]);
+            MLN(hi, lo);
+            ptr = *Dptr + pe;
+            MLA(hi, lo, (*fe)[7], ptr[ 2]);
+            MLA(hi, lo, (*fe)[6], ptr[ 4]);
+            MLA(hi, lo, (*fe)[5], ptr[ 6]);
+            MLA(hi, lo, (*fe)[4], ptr[ 8]);
+            MLA(hi, lo, (*fe)[3], ptr[10]);
+            MLA(hi, lo, (*fe)[2], ptr[12]);
+            MLA(hi, lo, (*fe)[1], ptr[14]);
+            MLA(hi, lo, (*fe)[0], ptr[ 0]);
+            *pcm1++ = SHIFT(MLZ(hi, lo));
+
+            ptr = *Dptr - po;
+            ML0(hi, lo, (*fo)[7], ptr[29]);
+            MLA(hi, lo, (*fo)[6], ptr[27]);
+            MLA(hi, lo, (*fo)[5], ptr[25]);
+            MLA(hi, lo, (*fo)[4], ptr[23]);
+            MLA(hi, lo, (*fo)[3], ptr[21]);
+            MLA(hi, lo, (*fo)[2], ptr[19]);
+            MLA(hi, lo, (*fo)[1], ptr[17]);
+            MLA(hi, lo, (*fo)[0], ptr[15]);
+            ptr = *Dptr - pe;
+            MLA(hi, lo, (*fe)[0], ptr[15]);
+            MLA(hi, lo, (*fe)[1], ptr[17]);
+            MLA(hi, lo, (*fe)[2], ptr[19]);
+            MLA(hi, lo, (*fe)[3], ptr[21]);
+            MLA(hi, lo, (*fe)[4], ptr[23]);
+            MLA(hi, lo, (*fe)[5], ptr[25]);
+            MLA(hi, lo, (*fe)[6], ptr[27]);
+            MLA(hi, lo, (*fe)[7], ptr[29]);
+            *pcm2-- = SHIFT(MLZ(hi, lo));
+          }
+
+          ++fo;
+        }
+
+        ++Dptr;
+        ptr = *Dptr + po;
+        ML0(hi, lo, (*fo)[0], ptr[ 0]);
+        MLA(hi, lo, (*fo)[1], ptr[14]);
+        MLA(hi, lo, (*fo)[2], ptr[12]);
+        MLA(hi, lo, (*fo)[3], ptr[10]);
+        MLA(hi, lo, (*fo)[4], ptr[ 8]);
+        MLA(hi, lo, (*fo)[5], ptr[ 6]);
+        MLA(hi, lo, (*fo)[6], ptr[ 4]);
+        MLA(hi, lo, (*fo)[7], ptr[ 2]);
+        *pcm1 = SHIFT(-MLZ(hi, lo));
+        pcm1 += 8;
+
+        phase = (phase + 1) % 16;
+      }
+    }
+  }
+}
+
+#elif __OPT_X68K_INLINE_SYNTH__
+
+/*
+ * synth_full / synth_half - MC68060 最適化版
+ *
+ * 修正履歴:
+ *   v1: 初版
+ *   v2: FIR16_PCM1 の fe アクセス順バグ修正
+ *   v3: インラインアセンブラ出力制約バグ修正
+ *       "=d"(result) は GCC が d0..d7 を自由に選ぶため
+ *       asr.l #2,d0 (d0固定) と矛盾 → move.l d0,%[result] で明示コピー
+ *   v4: synth_half 追加
+ *
+ * 共通マクロ FIR16_PCM1 / FIR16_PCM2 を synth_full と synth_half で共用。
+ * synth_half の pcm2 側は fo/fe の順序が synth_full と逆だが加算は可換なので
+ * FIR16_PCM2 の引数順を入れ替えて呼ぶだけでよい。
+ */
+
+/* ---------------------------------------------------------------
+ * FIR16_PCM1: pcm1 書き込み用 16-tap FIR (synth_full/half 共用)
+ *
+ *   sum = -( fo[0]*D[po+ 0] + fo[1]*D[po+14] + fo[2]*D[po+12]
+ *           + fo[3]*D[po+10] + fo[4]*D[po+ 8] + fo[5]*D[po+ 6]
+ *           + fo[6]*D[po+ 4] + fo[7]*D[po+ 2] )
+ *         + fe[7]*D[pe+ 2] + fe[6]*D[pe+ 4] + fe[5]*D[pe+ 6]
+ *         + fe[4]*D[pe+ 8] + fe[3]*D[pe+10] + fe[2]*D[pe+12]
+ *         + fe[1]*D[pe+14] + fe[0]*D[pe+ 0]
+ *
+ * バイトオフセット (mad_fixed_t = 4 bytes):
+ *   fo[n] = n*4(%[fo]),  fe[n] = n*4(%[fe])
+ *   D[po+k] = k*4(%[dpo]),  D[pe+k] = k*4(%[dpe])
+ * --------------------------------------------------------------- */
+#define FIR16_PCM1(fo_ptr, fe_ptr, dpo, dpe, result)           \
+__asm__ __volatile__ (                                          \
+    /* --- odd part: neg(fo · D[po]) --- */                     \
+    "move.l  (%[p1fo]),d0\n\t"     /* fo[0] */                  \
+    "move.l  (%[p1a]),d1\n\t"      /* D[po+0] */                \
+    "move.l  4(%[p1fo]),d2\n\t"    /* fo[1] */                  \
+    "move.l  56(%[p1a]),d3\n\t"    /* D[po+14] */               \
+    "muls.l  d1,d0\n\t"                                         \
+    "muls.l  d3,d2\n\t"                                         \
+    "move.l  8(%[p1fo]),d4\n\t"    /* fo[2] */                  \
+    "move.l  48(%[p1a]),d5\n\t"    /* D[po+12] */               \
+    "add.l   d2,d0\n\t"                                         \
+    "muls.l  d5,d4\n\t"                                         \
+    "move.l  12(%[p1fo]),d2\n\t"   /* fo[3] */                  \
+    "move.l  40(%[p1a]),d3\n\t"    /* D[po+10] */               \
+    "add.l   d4,d0\n\t"                                         \
+    "muls.l  d3,d2\n\t"                                         \
+    "move.l  16(%[p1fo]),d4\n\t"   /* fo[4] */                  \
+    "move.l  32(%[p1a]),d5\n\t"    /* D[po+8] */                \
+    "add.l   d2,d0\n\t"                                         \
+    "muls.l  d5,d4\n\t"                                         \
+    "move.l  20(%[p1fo]),d2\n\t"   /* fo[5] */                  \
+    "move.l  24(%[p1a]),d3\n\t"    /* D[po+6] */                \
+    "add.l   d4,d0\n\t"                                         \
+    "muls.l  d3,d2\n\t"                                         \
+    "move.l  24(%[p1fo]),d4\n\t"   /* fo[6] */                  \
+    "move.l  16(%[p1a]),d5\n\t"    /* D[po+4] */                \
+    "add.l   d2,d0\n\t"                                         \
+    "muls.l  d5,d4\n\t"                                         \
+    "move.l  28(%[p1fo]),d2\n\t"   /* fo[7] */                  \
+    "move.l  8(%[p1a]),d3\n\t"     /* D[po+2] */                \
+    "add.l   d4,d0\n\t"                                         \
+    "muls.l  d3,d2\n\t"                                         \
+    "add.l   d2,d0\n\t"                                         \
+    "neg.l   d0\n\t"               /* MLN */                    \
+    /* --- even part: fe[7..0] · D[pe+2,4,6,8,10,12,14,0] --- */\
+    "move.l  28(%[p1fe]),d1\n\t"   /* fe[7] */                  \
+    "move.l  8(%[p1b]),d2\n\t"     /* D[pe+2] */                \
+    "move.l  24(%[p1fe]),d3\n\t"   /* fe[6] */                  \
+    "move.l  16(%[p1b]),d4\n\t"    /* D[pe+4] */                \
+    "muls.l  d2,d1\n\t"                                         \
+    "muls.l  d4,d3\n\t"                                         \
+    "move.l  20(%[p1fe]),d5\n\t"   /* fe[5] */                  \
+    "move.l  24(%[p1b]),d6\n\t"    /* D[pe+6] */                \
+    "add.l   d3,d1\n\t"                                         \
+    "muls.l  d6,d5\n\t"                                         \
+    "move.l  16(%[p1fe]),d2\n\t"   /* fe[4] */                  \
+    "move.l  32(%[p1b]),d3\n\t"    /* D[pe+8] */                \
+    "add.l   d5,d1\n\t"                                         \
+    "muls.l  d3,d2\n\t"                                         \
+    "move.l  12(%[p1fe]),d5\n\t"   /* fe[3] */                  \
+    "move.l  40(%[p1b]),d6\n\t"    /* D[pe+10] */               \
+    "add.l   d2,d1\n\t"                                         \
+    "muls.l  d6,d5\n\t"                                         \
+    "move.l  8(%[p1fe]),d2\n\t"    /* fe[2] */                  \
+    "move.l  48(%[p1b]),d3\n\t"    /* D[pe+12] */               \
+    "add.l   d5,d1\n\t"                                         \
+    "muls.l  d3,d2\n\t"                                         \
+    "move.l  4(%[p1fe]),d5\n\t"    /* fe[1] */                  \
+    "move.l  56(%[p1b]),d6\n\t"    /* D[pe+14] */               \
+    "add.l   d2,d1\n\t"                                         \
+    "muls.l  d6,d5\n\t"                                         \
+    "move.l  (%[p1fe]),d2\n\t"     /* fe[0] */                  \
+    "move.l  (%[p1b]),d3\n\t"      /* D[pe+0] */                \
+    "add.l   d5,d1\n\t"                                         \
+    "muls.l  d3,d2\n\t"                                         \
+    "add.l   d2,d1\n\t"                                         \
+    "add.l   d1,d0\n\t"                                         \
+    "asr.l   #2,d0\n\t"                                         \
+    "move.l  d0,%[result]\n\t"                                  \
+    : [result] "=d" (result)                                    \
+    : [p1fo] "a" (fo_ptr),                                      \
+      [p1fe] "a" (fe_ptr),                                      \
+      [p1a]  "a" (dpo),                                         \
+      [p1b]  "a" (dpe)                                          \
+    : "d0","d1","d2","d3","d4","d5","d6","cc"                   \
+)
+
+/* ---------------------------------------------------------------
+ * FIR16_PCM2: pcm2 書き込み用 16-tap FIR (synth_full/half 共用)
+ *
+ * synth_full の呼び出し:
+ *   FIR16_PCM2(*fo, *fe, *Dptr-pe, *Dptr-po, result)
+ *   sum = fe[0..7]·D[-pe+15..29] + fo[7..0]·D[-po+29..15]
+ *
+ * synth_half の呼び出し (fo/fe が逆順だが加算は可換):
+ *   FIR16_PCM2(*fo, *fe, *Dptr-po, *Dptr-pe, result)
+ *   ※ 第3引数に dnpo、第4引数に dnpe を渡す
+ *
+ * マクロ内部は「第1引数[7..0]·第3引数オフセット + 第2引数[0..7]·第4引数オフセット」
+ * として統一。引数の組み合わせで両方に対応。
+ *
+ * バイトオフセット: ptr[15]=+60, ptr[17]=+68, ..., ptr[29]=+116
+ * --------------------------------------------------------------- */
+/* 制約シンボル名は p2fo/p2fe/p2a/p2b で固定し、マクロ引数名と切り離す */
+#define FIR16_PCM2(fo_ptr, fe_ptr, dn1, dn2, result)           \
+__asm__ __volatile__ (                                          \
+    /* --- fo[7..0] · p2a[29,27,...,15] --- */                  \
+    "move.l  28(%[p2fo]),d0\n\t"   /* fo[7] */                  \
+    "move.l  116(%[p2a]),d1\n\t"   /* dn1[29] */                \
+    "move.l  24(%[p2fo]),d2\n\t"   /* fo[6] */                  \
+    "move.l  108(%[p2a]),d3\n\t"   /* dn1[27] */                \
+    "muls.l  d1,d0\n\t"                                         \
+    "muls.l  d3,d2\n\t"                                         \
+    "move.l  20(%[p2fo]),d4\n\t"   /* fo[5] */                  \
+    "move.l  100(%[p2a]),d5\n\t"   /* dn1[25] */                \
+    "add.l   d2,d0\n\t"                                         \
+    "muls.l  d5,d4\n\t"                                         \
+    "move.l  16(%[p2fo]),d2\n\t"   /* fo[4] */                  \
+    "move.l  92(%[p2a]),d3\n\t"    /* dn1[23] */                \
+    "add.l   d4,d0\n\t"                                         \
+    "muls.l  d3,d2\n\t"                                         \
+    "move.l  12(%[p2fo]),d4\n\t"   /* fo[3] */                  \
+    "move.l  84(%[p2a]),d5\n\t"    /* dn1[21] */                \
+    "add.l   d2,d0\n\t"                                         \
+    "muls.l  d5,d4\n\t"                                         \
+    "move.l  8(%[p2fo]),d2\n\t"    /* fo[2] */                  \
+    "move.l  76(%[p2a]),d3\n\t"    /* dn1[19] */                \
+    "add.l   d4,d0\n\t"                                         \
+    "muls.l  d3,d2\n\t"                                         \
+    "move.l  4(%[p2fo]),d4\n\t"    /* fo[1] */                  \
+    "move.l  68(%[p2a]),d5\n\t"    /* dn1[17] */                \
+    "add.l   d2,d0\n\t"                                         \
+    "muls.l  d5,d4\n\t"                                         \
+    "move.l  (%[p2fo]),d2\n\t"     /* fo[0] */                  \
+    "move.l  60(%[p2a]),d3\n\t"    /* dn1[15] */                \
+    "add.l   d4,d0\n\t"                                         \
+    "muls.l  d3,d2\n\t"                                         \
+    "add.l   d2,d0\n\t"                                         \
+    /* --- fe[0..7] · p2b[15,17,...,29] --- */                  \
+    "move.l  (%[p2fe]),d1\n\t"     /* fe[0] */                  \
+    "move.l  60(%[p2b]),d2\n\t"    /* dn2[15] */                \
+    "move.l  4(%[p2fe]),d3\n\t"    /* fe[1] */                  \
+    "move.l  68(%[p2b]),d4\n\t"    /* dn2[17] */                \
+    "muls.l  d2,d1\n\t"                                         \
+    "muls.l  d4,d3\n\t"                                         \
+    "move.l  8(%[p2fe]),d5\n\t"    /* fe[2] */                  \
+    "move.l  76(%[p2b]),d6\n\t"    /* dn2[19] */                \
+    "add.l   d3,d1\n\t"                                         \
+    "muls.l  d6,d5\n\t"                                         \
+    "move.l  12(%[p2fe]),d2\n\t"   /* fe[3] */                  \
+    "move.l  84(%[p2b]),d3\n\t"    /* dn2[21] */                \
+    "add.l   d5,d1\n\t"                                         \
+    "muls.l  d3,d2\n\t"                                         \
+    "move.l  16(%[p2fe]),d5\n\t"   /* fe[4] */                  \
+    "move.l  92(%[p2b]),d6\n\t"    /* dn2[23] */                \
+    "add.l   d2,d1\n\t"                                         \
+    "muls.l  d6,d5\n\t"                                         \
+    "move.l  20(%[p2fe]),d2\n\t"   /* fe[5] */                  \
+    "move.l  100(%[p2b]),d3\n\t"   /* dn2[25] */                \
+    "add.l   d5,d1\n\t"                                         \
+    "muls.l  d3,d2\n\t"                                         \
+    "move.l  24(%[p2fe]),d5\n\t"   /* fe[6] */                  \
+    "move.l  108(%[p2b]),d6\n\t"   /* dn2[27] */                \
+    "add.l   d2,d1\n\t"                                         \
+    "muls.l  d6,d5\n\t"                                         \
+    "move.l  28(%[p2fe]),d2\n\t"   /* fe[7] */                  \
+    "move.l  116(%[p2b]),d3\n\t"   /* dn2[29] */                \
+    "add.l   d5,d1\n\t"                                         \
+    "muls.l  d3,d2\n\t"                                         \
+    "add.l   d2,d1\n\t"                                         \
+    "add.l   d1,d0\n\t"                                         \
+    "asr.l   #2,d0\n\t"                                         \
+    "move.l  d0,%[result]\n\t"                                  \
+    : [result] "=d" (result)                                    \
+    : [p2fo] "a" (fo_ptr),                                      \
+      [p2fe] "a" (fe_ptr),                                      \
+      [p2a]  "a" (dn1),                                         \
+      [p2b]  "a" (dn2)                                          \
+    : "d0","d1","d2","d3","d4","d5","d6","cc"                   \
+)
+
+/* ===============================================================
+ * synth_full
+ * =============================================================== */
+static
+void synth_full(struct mad_synth *synth, struct mad_frame const *frame,
+		unsigned int nch, unsigned int ns)
+{
+  unsigned int phase, ch, s, sb, pe, po;
+  mad_fixed_t *pcm1, *pcm2, (*filter)[2][2][16][8];
+  mad_fixed_t const (*sbsample)[36][32];
+  register mad_fixed_t (*fe)[8], (*fx)[8], (*fo)[8];
+  register mad_fixed_t const (*Dptr)[32], *ptr;
+  register mad_fixed64hi_t hi;
+  register mad_fixed64lo_t lo;
+
+  for (ch = 0; ch < nch; ++ch) {
+    sbsample = &frame->sbsample[ch];
+    filter   = &synth->filter[ch];
+    phase    = synth->phase;
+    pcm1     = synth->pcm.samples[ch];
+
+    for (s = 0; s < ns; ++s) {
+      dct32((*sbsample)[s], phase >> 1,
+	    (*filter)[0][phase & 1], (*filter)[1][phase & 1]);
+
+      pe = phase & ~1;
+      po = ((phase - 1) & 0xf) | 1;
+
+      fe = &(*filter)[0][ phase & 1][0];
+      fx = &(*filter)[0][~phase & 1][0];
+      fo = &(*filter)[1][~phase & 1][0];
+
+      Dptr = &D[0];
+
+      /* ---- sb=0: pcm1[0] (fx使用、Cのまま) ---- */
+      ptr = *Dptr + po;
+      ML0(hi, lo, (*fx)[0], ptr[ 0]);
+      MLA(hi, lo, (*fx)[1], ptr[14]);
+      MLA(hi, lo, (*fx)[2], ptr[12]);
+      MLA(hi, lo, (*fx)[3], ptr[10]);
+      MLA(hi, lo, (*fx)[4], ptr[ 8]);
+      MLA(hi, lo, (*fx)[5], ptr[ 6]);
+      MLA(hi, lo, (*fx)[6], ptr[ 4]);
+      MLA(hi, lo, (*fx)[7], ptr[ 2]);
+      MLN(hi, lo);
+      ptr = *Dptr + pe;
+      MLA(hi, lo, (*fe)[0], ptr[ 0]);
+      MLA(hi, lo, (*fe)[1], ptr[14]);
+      MLA(hi, lo, (*fe)[2], ptr[12]);
+      MLA(hi, lo, (*fe)[3], ptr[10]);
+      MLA(hi, lo, (*fe)[4], ptr[ 8]);
+      MLA(hi, lo, (*fe)[5], ptr[ 6]);
+      MLA(hi, lo, (*fe)[6], ptr[ 4]);
+      MLA(hi, lo, (*fe)[7], ptr[ 2]);
+      *pcm1++ = SHIFT(MLZ(hi, lo));
+
+      pcm2 = pcm1 + 30;
+
+      /* ---- sb=1..15 ---- */
+      for (sb = 1; sb < 16; ++sb) {
+        ++fe;
+        ++Dptr;
+
+        /* pcm1: neg(fo·D[po]) + fe[7..0]·D[pe+2,4,...,0] */
+        /* pcm2: fo[7..0]·D[-po+29..15] + fe[0..7]·D[-pe+15..29] */
+        {
+          const mad_fixed_t *dpo  = *Dptr + po;
+          const mad_fixed_t *dpe  = *Dptr + pe;
+          const mad_fixed_t *dnpo = *Dptr - po;
+          const mad_fixed_t *dnpe = *Dptr - pe;
+          mad_fixed_t result;
+          FIR16_PCM1(*fo, *fe, dpo, dpe, result);
+          *pcm1++ = result;
+          FIR16_PCM2(*fo, *fe, dnpo, dnpe, result);
+          *pcm2-- = result;
+        }
+
+        ++fo;
+      }
+
+      /* ---- sb=16: pcm1[16] (Cのまま) ---- */
+      ++Dptr;
+      ptr = *Dptr + po;
+      ML0(hi, lo, (*fo)[0], ptr[ 0]);
+      MLA(hi, lo, (*fo)[1], ptr[14]);
+      MLA(hi, lo, (*fo)[2], ptr[12]);
+      MLA(hi, lo, (*fo)[3], ptr[10]);
+      MLA(hi, lo, (*fo)[4], ptr[ 8]);
+      MLA(hi, lo, (*fo)[5], ptr[ 6]);
+      MLA(hi, lo, (*fo)[6], ptr[ 4]);
+      MLA(hi, lo, (*fo)[7], ptr[ 2]);
+      *pcm1 = SHIFT(-MLZ(hi, lo));
+      pcm1 += 16;
+
+      phase = (phase + 1) % 16;
+    }
+  }
+}
+
+/* ===============================================================
+ * synth_half
+ *
+ * synth_full との差分:
+ *   - sb ループで偶数 sb のみ pcm1/pcm2 を書く (!(sb & 1))
+ *   - pcm2 = pcm1 + 14  (fullは +30)
+ *   - 最後 pcm1 += 8    (fullは +16)
+ *   - pcm2 の FIR: Cコードでは fo が先・fe が後の順だが
+ *     加算は可換なので FIR16_PCM2 の dn1/dn2 引数を入れ替えて対応
+ *       dn1 = *Dptr - po  (fo側)
+ *       dn2 = *Dptr - pe  (fe側)
+ * =============================================================== */
+static
+void synth_half(struct mad_synth *synth, struct mad_frame const *frame,
+		unsigned int nch, unsigned int ns)
+{
+  unsigned int phase, ch, s, sb, pe, po;
+  mad_fixed_t *pcm1, *pcm2, (*filter)[2][2][16][8];
+  mad_fixed_t const (*sbsample)[36][32];
+  register mad_fixed_t (*fe)[8], (*fx)[8], (*fo)[8];
+  register mad_fixed_t const (*Dptr)[32], *ptr;
+  register mad_fixed64hi_t hi;
+  register mad_fixed64lo_t lo;
+
+  for (ch = 0; ch < nch; ++ch) {
+    sbsample = &frame->sbsample[ch];
+    filter   = &synth->filter[ch];
+    phase    = synth->phase;
+    pcm1     = synth->pcm.samples[ch];
+
+    for (s = 0; s < ns; ++s) {
+      dct32((*sbsample)[s], phase >> 1,
+	    (*filter)[0][phase & 1], (*filter)[1][phase & 1]);
+
+      pe = phase & ~1;
+      po = ((phase - 1) & 0xf) | 1;
+
+      fe = &(*filter)[0][ phase & 1][0];
+      fx = &(*filter)[0][~phase & 1][0];
+      fo = &(*filter)[1][~phase & 1][0];
+
+      Dptr = &D[0];
+
+      /* ---- sb=0: pcm1[0] (fx使用、Cのまま) ---- */
+      ptr = *Dptr + po;
+      ML0(hi, lo, (*fx)[0], ptr[ 0]);
+      MLA(hi, lo, (*fx)[1], ptr[14]);
+      MLA(hi, lo, (*fx)[2], ptr[12]);
+      MLA(hi, lo, (*fx)[3], ptr[10]);
+      MLA(hi, lo, (*fx)[4], ptr[ 8]);
+      MLA(hi, lo, (*fx)[5], ptr[ 6]);
+      MLA(hi, lo, (*fx)[6], ptr[ 4]);
+      MLA(hi, lo, (*fx)[7], ptr[ 2]);
+      MLN(hi, lo);
+      ptr = *Dptr + pe;
+      MLA(hi, lo, (*fe)[0], ptr[ 0]);
+      MLA(hi, lo, (*fe)[1], ptr[14]);
+      MLA(hi, lo, (*fe)[2], ptr[12]);
+      MLA(hi, lo, (*fe)[3], ptr[10]);
+      MLA(hi, lo, (*fe)[4], ptr[ 8]);
+      MLA(hi, lo, (*fe)[5], ptr[ 6]);
+      MLA(hi, lo, (*fe)[6], ptr[ 4]);
+      MLA(hi, lo, (*fe)[7], ptr[ 2]);
+      *pcm1++ = SHIFT(MLZ(hi, lo));
+
+      pcm2 = pcm1 + 14;  /* half: +14 (fullは +30) */
+
+      /* ---- sb=1..15 ---- */
+      for (sb = 1; sb < 16; ++sb) {
+        ++fe;
+        ++Dptr;
+
+        if (!(sb & 1)) {
+          /* 偶数 sb のみ出力 */
+
+          /* pcm1/pcm2 両方計算。Dptr からの加減算を先にポインタへ。 */
+          {
+            const mad_fixed_t *dpo  = *Dptr + po;
+            const mad_fixed_t *dpe  = *Dptr + pe;
+            const mad_fixed_t *dnpo = *Dptr - po;
+            const mad_fixed_t *dnpe = *Dptr - pe;
+            mad_fixed_t result;
+            FIR16_PCM1(*fo, *fe, dpo, dpe, result);
+            *pcm1++ = result;
+            /* pcm2: Cコードは fo先だが加算可換、FIR16_PCM2 と同一引数順で正しい */
+            FIR16_PCM2(*fo, *fe, dnpo, dnpe, result);
+            *pcm2-- = result;
+          }
+        }
+
+        ++fo;
+      }
+
+      /* ---- sb=16: pcm1[8] (Cのまま) ---- */
+      ++Dptr;
+      ptr = *Dptr + po;
+      ML0(hi, lo, (*fo)[0], ptr[ 0]);
+      MLA(hi, lo, (*fo)[1], ptr[14]);
+      MLA(hi, lo, (*fo)[2], ptr[12]);
+      MLA(hi, lo, (*fo)[3], ptr[10]);
+      MLA(hi, lo, (*fo)[4], ptr[ 8]);
+      MLA(hi, lo, (*fo)[5], ptr[ 6]);
+      MLA(hi, lo, (*fo)[6], ptr[ 4]);
+      MLA(hi, lo, (*fo)[7], ptr[ 2]);
+      *pcm1 = SHIFT(-MLZ(hi, lo));
+      pcm1 += 8;  /* half: +8 (fullは +16) */
+
+      phase = (phase + 1) % 16;
+    }
+  }
+}
+
+#else
+
 /*
  * NAME:	synth->full()
  * DESCRIPTION:	perform full frequency PCM synthesis
  */
+ 
 static
 void synth_full(struct mad_synth *synth, struct mad_frame const *frame,
 		unsigned int nch, unsigned int ns)
@@ -680,12 +2275,14 @@ void synth_full(struct mad_synth *synth, struct mad_frame const *frame,
 
       *pcm1 = SHIFT(-MLZ(hi, lo));
       pcm1 += 16;
+      
 
       phase = (phase + 1) % 16;
+
     }
   }
 }
-# endif
+
 
 /*
  * NAME:	synth->half()
@@ -824,6 +2421,10 @@ void synth_half(struct mad_synth *synth, struct mad_frame const *frame,
     }
   }
 }
+
+#endif
+
+#endif
 
 /*
  * NAME:	synth->quarter()

@@ -3,8 +3,25 @@
 libmad-0.15.1b/_build
 libmad-0.15.1b/_build000
 libmad-0.15.1b/_build030
+libmad-0.15.1b/_build060
+
+libhelix-mp3/_build
+libhelix-mp3/_build000
+libhelix-mp3/_build030
+libhelix-mp3/_build060
+
+libhelix-mp3/real/_build
+libhelix-mp3/real/_build000
+libhelix-mp3/real/_build030
+libhelix-mp3/real/_build060
 
 src/_build
 src/_build000
 src/_build030
+src/_build060
+
 src/_work
+
+venv
+
+mpega_libmad

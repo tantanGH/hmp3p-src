@@ -420,6 +420,7 @@ mad_fixed_t mad_f_mul_inline(mad_fixed_t x, mad_fixed_t y)
 
 #  define MAD_F_SCALEBITS  MAD_F_FRACBITS
 
+
 /* --- Default ------------------------------------------------------------- */
 
 # elif defined(FPM_DEFAULT)
@@ -433,6 +434,7 @@ mad_fixed_t mad_f_mul_inline(mad_fixed_t x, mad_fixed_t y)
  *
  * Pre-rounding is required to stay within the limits of compliance.
  */
+
 #  if defined(OPT_SPEED)
 #   define mad_f_mul(x, y)	(((x) >> 12) * ((y) >> 16))
 #  else

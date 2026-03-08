@@ -22,6 +22,8 @@
 # ifndef LIBMAD_SYNTH_H
 # define LIBMAD_SYNTH_H
 
+#include <stdint.h>
+
 # include "fixed.h"
 # include "frame.h"
 
@@ -38,6 +40,9 @@ struct mad_synth {
 
   unsigned int phase;			/* current processing phase */
 
+#ifdef __OPT_X68K_INTERLEAVED_16BIT_DIRECT__
+  short* pcm_16bit;       /* 16bit interleaved PCM output */
+#endif  
   struct mad_pcm pcm;			/* PCM output */
 };
 

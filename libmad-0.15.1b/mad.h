@@ -662,9 +662,13 @@ void mad_timer_string(mad_timer_t, char *, char const *,
 # ifndef LIBMAD_STREAM_H
 # define LIBMAD_STREAM_H
 
-
+#ifdef __OPT_X68K_FAST_FRAME_DECODE__
+# define MAD_BUFFER_GUARD	8
+# define MAD_BUFFER_MDLEN	(511 + 2048*32 + MAD_BUFFER_GUARD)
+#else
 # define MAD_BUFFER_GUARD	8
 # define MAD_BUFFER_MDLEN	(511 + 2048 + MAD_BUFFER_GUARD)
+#endif
 
 enum mad_error {
   MAD_ERROR_NONE	   = 0x0000,	/* no error */
@@ -796,6 +800,19 @@ struct mad_frame {
 
   int options;				/* decoding options (from stream) */
 
+#ifdef __VERBOSE_FRAME_DECODE__
+  unsigned long header_decode_time;
+  unsigned long layer3_time;
+#endif
+
+#ifdef __VERBOSE_LAYER3__
+  unsigned long layer3_sideinfo_time;
+  unsigned long layer3_find_next_time;
+  unsigned long layer3_find_main_time;
+  unsigned long layer3_decode_time;
+  unsigned long layer3_preload_time;
+#endif
+
   mad_fixed_t sbsample[2][36][32];	/* synthesis subband filter samples */
   mad_fixed_t (*overlap)[2][32][18];	/* Layer III block overlap data */
 };
@@ -863,6 +880,9 @@ struct mad_synth {
 
   unsigned int phase;			/* current processing phase */
 
+#ifdef __OPT_X68K_INTERLEAVED_16BIT_DIRECT__
+  short* pcm_16bit;       /* 16bit interleaved PCM output */
+#endif  
   struct mad_pcm pcm;			/* PCM output */
 };
 

@@ -28,13 +28,13 @@ TARGET_FILE = HMP3P.X
 DOCUMENT_FILE = HMP3P.DOC
 
 # Distribution package 
-PACKAGE_FILE = ../HMP3P030.ZIP
+PACKAGE_FILE = ../HMP3P060.ZIP
 
 # ヘッダ検索パス
 INCLUDE_FLAGS = -I${XDEV68K_DIR}/include/xc -I${XDEV68K_DIR}/include/xdev68k -I${LIBMAD_DIR}
 
 # コンパイルフラグ
-COMMON_FLAGS = -m68000 -O3 $(INCLUDE_FLAGS) -z-stack=8192
+COMMON_FLAGS = -m68000 -O3 -fomit-frame-pointer -finline-functions -falign-loops=4 -falign-functions=4 $(INCLUDE_FLAGS) -z-stack=8192
 CFLAGS = $(COMMON_FLAGS) -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall-used-a2 \
     -fexec-charset=cp932 -fverbose-asm -fno-defer-pop
 
@@ -103,10 +103,10 @@ $(INTERMEDIATE_DIR)/%.o : %.c Makefile.000 $(HEADER_SRCS)
 	$(HAS) -e -u -w0 $(INCLUDE_FLAGS) $(INTERMEDIATE_DIR)/$*.s -o $(INTERMEDIATE_DIR)/$*.o
 
 # *.s ソースのアセンブル
-$(INTERMEDIATE_DIR)/%.o : %.s Makefile
+$(INTERMEDIATE_DIR)/%.o : %.s Makefile.000
 	mkdir -p $(INTERMEDIATE_DIR)
 	iconv -t cp932 $*.s > $(INTERMEDIATE_DIR)/$*.has
 	$(HAS) -e -u -w0 $(INCLUDE_FLAGS) $(INTERMEDIATE_DIR)/$*.has -o $(INTERMEDIATE_DIR)/$*.o
 
 package:
-	zip -j ${PACKAGE_FILE} ${INTERMEDIATE_DIR}/${TARGET_FILE} ${DOCUMENT_FILE} ./_build030/HMP3P030.X
+	zip -j ${PACKAGE_FILE} ${INTERMEDIATE_DIR}/${TARGET_FILE} ${DOCUMENT_FILE}

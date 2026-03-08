@@ -4,14 +4,16 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stddef.h>
-#include "mad.h"
 
+#include "mad.h"
 typedef struct mad_stream MAD_STREAM;
 typedef struct mad_synth MAD_SYNTH;
 typedef struct mad_header MAD_HEADER;
 typedef struct mad_pcm MAD_PCM;
 typedef struct mad_frame MAD_FRAME;
 typedef mad_timer_t MAD_TIMER;
+
+#define MAX_MP3_FRAMES  (50000)
 
 typedef struct {
 
@@ -27,14 +29,12 @@ typedef struct {
   int32_t mp3_channels;
   size_t resample_counter;
 
-  int32_t mp3_frame_options;
-
   MAD_STREAM mad_stream;
   MAD_FRAME mad_frame;
   MAD_SYNTH mad_synth;
   MAD_TIMER mad_timer;
-
   MAD_PCM* current_mad_pcm;
+  int32_t mp3_frame_options;
 
 } MP3_DECODE_HANDLE;
 
