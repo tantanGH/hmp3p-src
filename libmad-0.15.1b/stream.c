@@ -19,7 +19,13 @@
  * $Id: stream.c,v 1.12 2004/02/05 09:02:39 rob Exp $
  */
 
+#ifdef __OPT_X68K_FAST_LAYER_DECODE__
+#undef __OPT_X68K_FAST_LAYER_DECODE__
+#endif
+
+#ifdef __OPT_X68K_HIMEM__
 #include "../src/himem.h"
+#endif
 
 # ifdef HAVE_CONFIG_H
 #  include "config.h"
@@ -66,8 +72,11 @@ void mad_stream_init(struct mad_stream *stream)
 void mad_stream_finish(struct mad_stream *stream)
 {
   if (stream->main_data) {
-    //free(stream->main_data);
+#ifdef __OPT_X68K_HIMEM__
     himem_free(stream->main_data, 1);
+#else
+    free(stream->main_data);
+#endif
     stream->main_data = 0;
   }
 

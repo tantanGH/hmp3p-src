@@ -42,7 +42,7 @@ COMMON_FLAGS = -m68030 -msoft-float -O3 -fomit-frame-pointer \
     	-fno-builtin -mno-strict-align \
 		${INCLUDE_FLAGS}
 CFLAGS = $(COMMON_FLAGS) -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall-used-a2 \
-    -fexec-charset=cp932 -fverbose-asm -fno-defer-pop \
+    -fexec-charset=cp932 -fverbose-asm \
 	-D__NO_VERBOSE__ -D__NO_OPT_INLINE_ASM__
 
 # *.c ソースファイル

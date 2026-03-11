@@ -13,7 +13,7 @@
 //
 //  inline helper: 24bit signed int to 16bit signed int
 //
-static inline int16_t scale_16bit(mad_fixed_t sample) {
+static inline int16_t __attribute__((hot)) scale_16bit(mad_fixed_t sample) {
 
   // round
   sample += (1L << (MAD_F_FRACBITS - 16));
@@ -45,7 +45,7 @@ static inline int16_t scale_12bit(mad_fixed_t sample) {
   if (sample < -MAD_F_ONE) {
     sample = -MAD_F_ONE;
   }
-  
+
   // quantize
   return sample >> (MAD_F_FRACBITS + 1 - 12);
 }
@@ -354,25 +354,6 @@ int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_
 #ifdef __VERBOSE2__
   uint32_t tf = 0;
   uint32_t ts = 0;
-#endif
-
-#ifdef __VERBOSE_FRAME_DECODE__
-  uint32_t tf_h = 0;
-  uint32_t tf_l = 0;
-#endif
-
-#ifdef __VERBOSE_LAYER3__
-  uint32_t tf_l3_sideinfo = 0;
-  uint32_t tf_l3_find_next = 0;
-  uint32_t tf_l3_find_main = 0;
-  uint32_t tf_l3_decode = 0;
-  uint32_t tf_l3_preload = 0;
-#endif
-
-#ifdef __VERBOSE_LAYER3_DECODE__
-  uint32_t t_layer3_decode_scale = 0;
-  uint32_t t_layer3_decode_stereo = 0;
-  uint32_t t_layer3_decode_reorder = 0;
 #endif
 
 #ifdef __VERBOSE__

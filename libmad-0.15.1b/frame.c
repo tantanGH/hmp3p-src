@@ -19,7 +19,13 @@
  * $Id: frame.c,v 1.29 2004/02/04 22:59:19 rob Exp $
  */
 
+#ifdef __OPT_X68K_HIMEM__
 #include "../src/himem.h"
+#endif
+
+#ifdef __OPT_X68K_FAST_LAYER_DECODE__
+#undef __OPT_X68K_FAST_LAYER_DECODE__
+#endif
 
 #ifdef __VERBOSE2__
 #include <iocslib.h>
@@ -113,8 +119,11 @@ void mad_frame_finish(struct mad_frame *frame)
   mad_header_finish(&frame->header);
 
   if (frame->overlap) {
-    //free(frame->overlap);
+#ifdef __OPT_X68K_HIMEM__
     himem_free(frame->overlap, 1);
+#else
+    free(frame->overlap);
+#endif
     frame->overlap = 0;
   }
 }

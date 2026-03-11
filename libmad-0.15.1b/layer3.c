@@ -19,10 +19,8 @@
  * $Id: layer3.c,v 1.43 2004/01/23 09:41:32 rob Exp $
  */
 
+#ifdef __OPT_X68K_HIMEM__
 #include "../src/himem.h"
-
-#if defined(__VERBOSE_LAYER3__)
-#include <iocslib.h>
 #endif
 
 # ifdef HAVE_CONFIG_H
@@ -51,7 +49,45 @@
 # include "huffman.h"
 # include "layer3.h"
 
-#ifdef __OPT_X68K_FAST_FRAME_DECODE__
+#ifdef __OPT_X68K_FAST_LAYER_DECODE__
+
+/*
+ * NAME:	bit->length()
+ * DESCRIPTION:	return number of bits between start and end points
+ */
+static inline unsigned int mad_bit_length(struct mad_bitptr const *begin,
+			    struct mad_bitptr const *end)
+{
+  return begin->left +
+    CHAR_BIT * (end->byte - (begin->byte + 1)) + (CHAR_BIT - end->left);
+}
+
+/*
+ * NAME:	bit->nextbyte()
+ * DESCRIPTION:	return pointer to next unprocessed byte
+ */
+static inline unsigned char const *mad_bit_nextbyte(struct mad_bitptr const *bitptr)
+{
+  return bitptr->left == CHAR_BIT ? bitptr->byte : bitptr->byte + 1;
+}
+
+/*
+ * NAME:	bit->skip()
+ * DESCRIPTION:	advance bit pointer
+ */
+static inline void mad_bit_skip(struct mad_bitptr *bitptr, unsigned int len)
+{
+  bitptr->byte += len / CHAR_BIT;
+  bitptr->left -= len % CHAR_BIT;
+
+  if (bitptr->left > CHAR_BIT) {
+    bitptr->byte++;
+    bitptr->left += CHAR_BIT;
+  }
+
+  if (bitptr->left < CHAR_BIT)
+    bitptr->cache = *bitptr->byte;
+}
 
 /*
  * NAME:	bit->read()
@@ -2582,8 +2618,11 @@ int mad_layer_III(struct mad_stream *stream, struct mad_frame *frame)
   /* allocate Layer III dynamic structures */
 
   if (stream->main_data == 0) {
-    //stream->main_data = malloc(MAD_BUFFER_MDLEN);
+#ifdef __OPT_X68K_HIMEM__
     stream->main_data = himem_malloc(MAD_BUFFER_MDLEN, 1);
+#else
+    stream->main_data = malloc(MAD_BUFFER_MDLEN);
+#endif
     if (stream->main_data == 0) {
       stream->error = MAD_ERROR_NOMEM;
       return -1;
@@ -2591,14 +2630,15 @@ int mad_layer_III(struct mad_stream *stream, struct mad_frame *frame)
   }
 
   if (frame->overlap == 0) {
-    //frame->overlap = calloc(2 * 32 * 18, sizeof(mad_fixed_t));
-    size_t overlap_size = 2 * 32 * 18 * sizeof(mad_fixed_t);
-    frame->overlap = himem_malloc(overlap_size, 1);
+#ifdef __OPT_X68K_HIMEM__
+    frame->overlap = himem_calloc(2 * 32 * 18, sizeof(mad_fixed_t), 1);
+#else
+    frame->overlap = calloc(2 * 32 * 18, sizeof(mad_fixed_t));
+#endif
     if (frame->overlap == 0) {
       stream->error = MAD_ERROR_NOMEM;
       return -1;
     }
-    memset(frame->overlap, 0, overlap_size);
   }
 #endif
 
@@ -2606,7 +2646,7 @@ int mad_layer_III(struct mad_stream *stream, struct mad_frame *frame)
   si_len = (header->flags & MAD_FLAG_LSF_EXT) ?
     (nch == 1 ? 9 : 17) : (nch == 1 ? 17 : 32);
 
-#ifndef __OPT_X68K_FAST_FRAME_DECODE__
+#ifndef __OPT_X68K_FAST_LAYER_DECODE__
   /* check frame sanity */
 
   if (stream->next_frame - mad_bit_nextbyte(&stream->ptr) <
@@ -2617,7 +2657,7 @@ int mad_layer_III(struct mad_stream *stream, struct mad_frame *frame)
   }
 #endif
 
-#ifndef __OPT_X68K_FAST_FRAME_DECODE__
+#ifndef __OPT_X68K_FAST_LAYER_DECODE__
 
   /* check CRC word */
 
@@ -2636,9 +2676,6 @@ int mad_layer_III(struct mad_stream *stream, struct mad_frame *frame)
 
   /* decode frame side information */
 
-#ifdef __VERBOSE_LAYER3__
-  unsigned long t0 = ONTIME();
-#endif
   error = III_sideinfo(&stream->ptr, nch, header->flags & MAD_FLAG_LSF_EXT,
 		       &si, &data_bitlen, &priv_bitlen);
   if (error && result == 0) {
@@ -2649,10 +2686,6 @@ int mad_layer_III(struct mad_stream *stream, struct mad_frame *frame)
   header->flags        |= priv_bitlen;
   header->private_bits |= si.private_bits;
 
-#ifdef __VERBOSE_LAYER3__
-  unsigned long t1 = ONTIME();
-  frame->layer3_sideinfo_time = (t1 - t0);
-#endif
 
   /* find main_data of next frame */
 
@@ -2674,10 +2707,6 @@ int mad_layer_III(struct mad_stream *stream, struct mad_frame *frame)
     mad_bit_finish(&peek);
   }
 
-#ifdef __VERBOSE_LAYER3__
-  unsigned long t2 = ONTIME();
-  frame->layer3_find_next_time = (t2 - t1);
-#endif
 
   /* find main_data of this frame */
 
@@ -2721,10 +2750,6 @@ int mad_layer_III(struct mad_stream *stream, struct mad_frame *frame)
 
   frame_free = frame_space - frame_used;
 
-#ifdef __VERBOSE_LAYER3__
-  unsigned long t3 = ONTIME();
-  frame->layer3_find_main_time = (t3 - t2);
-#endif
 
   /* decode main_data */
 
@@ -2749,10 +2774,6 @@ int mad_layer_III(struct mad_stream *stream, struct mad_frame *frame)
 	  data_bitlen, stream->anc_bitlen);
 # endif
 
-#ifdef __VERBOSE_LAYER3__
-  unsigned long t4 = ONTIME();
-  frame->layer3_decode_time = (t4 - t3);
-#endif
 
   /* preload main_data buffer with up to 511 bytes for next frame(s) */
 
@@ -2782,11 +2803,6 @@ int mad_layer_III(struct mad_stream *stream, struct mad_frame *frame)
 	   stream->next_frame - frame_free, frame_free);
     stream->md_len += frame_free;
   }
-
-#ifdef __VERBOSE_LAYER3__
-  unsigned long t5 = ONTIME();
-  frame->layer3_preload_time = (t5 - t4);
-#endif
 
   return result;
 }
