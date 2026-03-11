@@ -42,9 +42,10 @@ static CHAIN_TABLE_EX* g_init_chain_table_ex = NULL;
 static int32_t g_funckey_mode = -1;
 
 //
-//  original pcm8pp frequency mode
+//  original pcm8pp frequency mode / max channels
 //
 static uint32_t g_original_pcm8pp_frequency_mode = 0;
+static uint32_t g_original_pcm8pp_max_channels = 0;
 
 //
 //  abort vector handler
@@ -65,7 +66,8 @@ static void abort_application() {
   if (pcm8pp_isavailable()) {
     pcm8pp_pause();
     pcm8pp_stop();
-    pcm8pp_set_frequency_mode(g_original_pcm8pp_frequency_mode);
+    if (g_original_pcm8pp_frequency_mode > 0) pcm8pp_set_frequency_mode(g_original_pcm8pp_frequency_mode);
+    if (g_original_pcm8pp_max_channels > 0) pcm8pp_set_max_channels(g_original_pcm8pp_max_channels);
   }
 
   // reclaim chain table buffers (pcm8a)
@@ -275,6 +277,7 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   } else if (pcm8pp_isavailable()) {
     playback_driver = DRIVER_PCM8PP;    
     g_original_pcm8pp_frequency_mode = pcm8pp_get_frequency_mode();   // preserve original pcm8pp frequency mode
+    g_original_pcm8pp_max_channels = pcm8pp_get_max_channels();       // preserve original pcm8pp max channels
   } else {
     strcpy(error_mes, cp932rsc_pcm8_not_available);
     goto exit;
@@ -622,6 +625,8 @@ try:
 
   if (playback_driver == DRIVER_PCM8PP) {
 
+    pcm8pp_set_max_channels(1);
+
     // start playback with pcm8pp extended linked array chain mode
     if ((pcm8pp_freq == 0x0e || pcm8pp_freq == 0x1e) && pcm8pp_get_frequency_mode() != 0x02) {
       pcm8pp_set_frequency_mode(0x02);    // 48kHz mode (stereo)
@@ -918,6 +923,15 @@ catch:
   B_PRINT("\r\n");
 
 exit:
+
+  // resume pcm8pp settings
+  if (pcm8pp_isavailable()) {
+#ifdef __VERBOSE__
+    printf("g_original_pcm8pp_max_channels = %d\n", g_original_pcm8pp_max_channels);
+#endif
+    if (g_original_pcm8pp_frequency_mode > 0) pcm8pp_set_frequency_mode(g_original_pcm8pp_frequency_mode);
+    if (g_original_pcm8pp_max_channels > 0) pcm8pp_set_max_channels(g_original_pcm8pp_max_channels);
+  }
 
   // screen clear
   if (pic_brightness > 0) {

@@ -34,10 +34,20 @@ PACKAGE_FILE = ../HMP3P060.ZIP
 INCLUDE_FLAGS = -I${XDEV68K_DIR}/include/xc -I${XDEV68K_DIR}/include/xdev68k -I${LIBMAD_DIR}
 
 # コンパイルフラグ
-COMMON_FLAGS = -m68060 -msoft-float -O3 -fomit-frame-pointer -finline-functions -falign-loops=16 -falign-functions=16 $(INCLUDE_FLAGS) -z-stack=8192
+COMMON_FLAGS = -m68060 -msoft-float -O3 -fomit-frame-pointer \
+		-finline-functions -finline-limit=10000 \
+    	-funroll-loops -fpeel-loops \
+    	-falign-functions=16 -falign-loops=16 \
+    	-fno-builtin -mno-strict-align \
+		${INCLUDE_FLAGS}
+_COMMON_FLAGS = -m68060 -msoft-float -O3 -fomit-frame-pointer \
+		-fno-builtin \
+		${INCLUDE_FLAGS}
+
+
 CFLAGS = $(COMMON_FLAGS) -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall-used-a2 \
     -fexec-charset=cp932 -fverbose-asm -fno-defer-pop \
-	-D__NO_VERBOSE__ -D__NO_VERBOSE2__ -D__NO_OPT_X68K_INTERLEAVED_16BIT_DIRECT__
+	-D__NO_VERBOSE__ -D__NO_VERBOSE2__ -D__NO_VERBOSE3__ -D__NO_OPT_X68K_INLINE_MACRO_SCALE__ -D__NO_OPT_X68K_INTERLEAVED_16BIT_DIRECT__
 
 # *.c ソースファイル
 C_SRCS = himem.c crtc.c pcm8a.c pcm8pp.c mp3_decode.c picojpeg.c jpeg_decode.c main.c

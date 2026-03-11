@@ -223,6 +223,13 @@ int32_t pcm8pp_resume() {
 }
 
 //
+//  get max channels ($01fa)
+//
+int32_t pcm8pp_get_max_channels() {
+  return pcm8pp_set_max_channels(-1);
+}
+
+//
 //  set max channels ($01fa)
 //
 int32_t pcm8pp_set_max_channels(int16_t channels) {

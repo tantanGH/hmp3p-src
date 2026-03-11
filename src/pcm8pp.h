@@ -19,6 +19,7 @@ int32_t pcm8pp_get_block_counter(int16_t channel);
 int32_t pcm8pp_stop();
 int32_t pcm8pp_pause();
 int32_t pcm8pp_resume();
+int32_t pcm8pp_get_max_channels();
 int32_t pcm8pp_set_max_channels(int16_t channels);
 int32_t pcm8pp_set_polyphonic_mode(int16_t mode);
 int32_t pcm8pp_get_frequency_mode();
