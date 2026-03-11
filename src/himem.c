@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
 #include <iocslib.h>
 #include <doslib.h>
 #include "himem.h"
@@ -16,6 +17,26 @@ static void* __himem_malloc(size_t size) {
     in_regs.d0 = 0xF8;      // IOCS _HIMEM
     in_regs.d1 = 1;         // HIMEM_MALLOC
     in_regs.d2 = size;
+
+    TRAP15(&in_regs, &out_regs);
+
+    uint32_t rc = out_regs.d0;
+
+    return (rc == 0) ? (void*)out_regs.a1 : NULL;
+}
+
+//
+//  allocate high memory block for array
+//
+static void* __himem_calloc(size_t count, size_t size) {
+
+    struct REGS in_regs = { 0 };
+    struct REGS out_regs = { 0 };
+
+    in_regs.d0 = 0xF8;      // IOCS _HIMEM
+    in_regs.d1 = 6;         // HIMEM_CALLOC
+    in_regs.d2 = count;
+    in_regs.d3 = size;
 
     TRAP15(&in_regs, &out_regs);
 
@@ -82,6 +103,17 @@ static void* __mainmem_malloc(size_t size) {
 }
 
 //
+//  allocate main memory array block
+//
+static void* __mainmem_calloc(size_t count, size_t size) {
+  size_t block_size = count * size;
+  uint32_t addr = MALLOC(block_size);
+  if (addr >= 0x81000000) return NULL;
+  memset((void*)addr,0,block_size);
+  return (void*)addr;
+}
+
+//
 //  free main memory block
 //
 static void __mainmem_free(void* ptr) {
@@ -108,6 +140,13 @@ static int32_t __mainmem_resize(void* ptr, size_t size) {
 //
 void* himem_malloc(size_t size, int32_t use_high_memory) {
     return use_high_memory ? __himem_malloc(size) : __mainmem_malloc(size);
+}
+
+//
+//  allocate memory array block
+//
+void* himem_calloc(size_t count, size_t size, int32_t use_high_memory) {
+    return use_high_memory ? __himem_calloc(count, size) : __mainmem_calloc(count, size);
 }
 
 //

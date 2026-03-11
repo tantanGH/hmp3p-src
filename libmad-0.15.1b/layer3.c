@@ -51,6 +51,53 @@
 # include "huffman.h"
 # include "layer3.h"
 
+#ifdef __OPT_X68K_FAST_FRAME_DECODE__
+
+/*
+ * NAME:	bit->read()
+ * DESCRIPTION:	read an arbitrary number of bits and return their UIMSBF value
+ */
+static inline unsigned long __attribute__((hot)) mad_bit_read(struct mad_bitptr *bitptr, unsigned int len)
+{
+  register unsigned long value;
+
+  if (bitptr->left == CHAR_BIT)
+    bitptr->cache = *bitptr->byte;
+
+  if (len < bitptr->left) {
+    value = (bitptr->cache & ((1 << bitptr->left) - 1)) >>
+      (bitptr->left - len);
+    bitptr->left -= len;
+
+    return value;
+  }
+
+  /* remaining bits in current byte */
+
+  value = bitptr->cache & ((1 << bitptr->left) - 1);
+  len  -= bitptr->left;
+
+  bitptr->byte++;
+  bitptr->left = CHAR_BIT;
+
+  /* more bytes */
+
+  while (len >= CHAR_BIT) {
+    value = (value << CHAR_BIT) | *bitptr->byte++;
+    len  -= CHAR_BIT;
+  }
+
+  if (len > 0) {
+    bitptr->cache = *bitptr->byte;
+
+    value = (value << len) | (bitptr->cache >> (CHAR_BIT - len));
+    bitptr->left -= len;
+  }
+
+  return value;
+}
+#endif
+
 /* --- Layer III ----------------------------------------------------------- */
 
 enum {

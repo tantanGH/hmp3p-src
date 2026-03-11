@@ -5,6 +5,7 @@
 #include <stddef.h>
 
 void* himem_malloc(size_t size, int32_t use_high_memory);
+void* himem_calloc(size_t count, size_t size, int32_t use_high_memory);
 void himem_free(void* ptr, int32_t use_high_memory);
 size_t himem_getsize(int32_t use_high_memory);
 int32_t himem_resize(void* ptr, size_t size, int32_t use_high_memory);

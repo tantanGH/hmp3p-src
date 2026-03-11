@@ -39,7 +39,11 @@ unsigned int mad_bit_length(struct mad_bitptr const *,
 unsigned char const *mad_bit_nextbyte(struct mad_bitptr const *);
 
 void mad_bit_skip(struct mad_bitptr *, unsigned int);
+
+#ifndef __OPT_X68K_FAST_FRAME_DECODE__
 unsigned long mad_bit_read(struct mad_bitptr *, unsigned int);
+#endif
+
 void mad_bit_write(struct mad_bitptr *, unsigned int, unsigned long);
 
 unsigned short mad_bit_crc(struct mad_bitptr, unsigned int, unsigned short);

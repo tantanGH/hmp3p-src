@@ -134,7 +134,7 @@ void mad_bit_skip(struct mad_bitptr *bitptr, unsigned int len)
  * NAME:	bit->read()
  * DESCRIPTION:	read an arbitrary number of bits and return their UIMSBF value
  */
-unsigned long mad_bit_read(struct mad_bitptr *bitptr, unsigned int len)
+unsigned long __attribute__((hot)) mad_bit_read(struct mad_bitptr *bitptr, unsigned int len)
 {
   register unsigned long value;
 

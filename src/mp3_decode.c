@@ -10,8 +10,6 @@
 #include <iocslib.h>
 #endif
 
-#ifndef __USE_LIBHELIX__
-
 //
 //  inline helper: 24bit signed int to 16bit signed int
 //
@@ -21,10 +19,12 @@ static inline int16_t scale_16bit(mad_fixed_t sample) {
   sample += (1L << (MAD_F_FRACBITS - 16));
 
   // clip
-  if (sample >= MAD_F_ONE)
+  if (sample >= MAD_F_ONE) {
     sample = MAD_F_ONE - 1;
-  else if (sample < -MAD_F_ONE)
+  }
+  if (sample < -MAD_F_ONE) {
     sample = -MAD_F_ONE;
+  }
 
   // quantize
   return sample >> (MAD_F_FRACBITS + 1 - 16);
@@ -39,16 +39,16 @@ static inline int16_t scale_12bit(mad_fixed_t sample) {
   sample += (1L << (MAD_F_FRACBITS - 12));
 
   // clip
-  if (sample >= MAD_F_ONE)
+  if (sample >= MAD_F_ONE) {
     sample = MAD_F_ONE - 1;
-  else if (sample < -MAD_F_ONE)
+  }
+  if (sample < -MAD_F_ONE) {
     sample = -MAD_F_ONE;
-
+  }
+  
   // quantize
   return sample >> (MAD_F_FRACBITS + 1 - 12);
 }
-
-#endif
 
 //
 //  utf-16 to cp932
@@ -325,13 +325,11 @@ int32_t mp3_decode_setup(MP3_DECODE_HANDLE* decode, void* mp3_data, size_t mp3_d
 
   if (decode->mad_frame.overlap == NULL) {
     //frame->overlap = calloc(2 * 32 * 18, sizeof(mad_fixed_t));
-    size_t overlap_size = 2 * 32 * 18 * sizeof(mad_fixed_t);
-    decode->mad_frame.overlap = himem_malloc(overlap_size, 1);
+    decode->mad_frame.overlap = himem_calloc(2 * 32 * 18, sizeof(mad_fixed_t), 1);
     if (decode->mad_frame.overlap == NULL) {
       rc = -1;
       goto exit;
     }
-    memset(decode->mad_frame.overlap, 0, overlap_size);
   }
 
   mad_stream_buffer(&(decode->mad_stream), mp3_data, mp3_data_len);
@@ -451,22 +449,6 @@ int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_
       uint32_t tf1 = ONTIME();
       tf += tf1 - tf0;
 #endif
-#ifdef __VERBOSE_FRAME_DECODE__      
-      tf_h += decode->mad_frame.header_decode_time;
-      tf_l += decode->mad_frame.layer3_time;
-#endif
-#ifdef __VERBOSE_LAYER3__
-      tf_l3_sideinfo += decode->mad_frame.layer3_sideinfo_time;
-      tf_l3_find_next += decode->mad_frame.layer3_find_next_time;
-      tf_l3_find_main += decode->mad_frame.layer3_find_main_time;
-      tf_l3_decode += decode->mad_frame.layer3_decode_time;
-      tf_l3_preload += decode->mad_frame.layer3_preload_time;
-#endif
-#ifdef __VERBOSE_LAYER3_DECODE__
-      t_layer3_decode_scale += decode->mad_frame.layer3_decode_scale;
-      t_layer3_decode_stereo += decode->mad_frame.layer3_decode_stereo;
-      t_layer3_decode_reorder += decode->mad_frame.layer3_decode_reorder;
-#endif
       if (result == -1) {
         if (decode->mad_stream.error == MAD_ERROR_BUFLEN) {
           // MP3 EOF
@@ -530,16 +512,7 @@ exit:
   // push resampled count
   *decoded_bytes = decode_ofs * sizeof(int16_t);
 
-#ifdef __VERBOSE_LAYER3_DECODE__
-  uint32_t t1 = ONTIME();
-  printf("%4.2f samples/sec (%d[%d,%d,%d],%d)\n",decode_ofs * 100.0 / 2.0 / (t1 - t0),tf,t_layer3_decode_scale,t_layer3_decode_stereo,t_layer3_decode_reorder,ts);
-#elif __VERBOSE_LAYER3__
-  uint32_t t1 = ONTIME();
-  printf("%4.2f samples/sec (%d[%d,%d,%d,%d,%d],%d)\n",decode_ofs * 100.0 / 2.0 / (t1 - t0),tf,tf_l3_sideinfo,tf_l3_find_next,tf_l3_find_main,tf_l3_decode,tf_l3_preload,ts);
-#elif __VERBOSE_FRAME_DECODE__
-  uint32_t t1 = ONTIME();
-  printf("%4.2f samples/sec (%d[%d,%d],%d)\n",decode_ofs * 100.0 / 2.0 / (t1 - t0),tf,tf_h,tf_l,ts);
-#elif __VERBOSE2__
+#ifdef __VERBOSE2__
   uint32_t t1 = ONTIME();
   printf("%4.2f samples/sec (%d,%d)\n",decode_ofs * 100.0 / 2.0 / (t1 - t0),tf,ts);
 #elif __VERBOSE__
