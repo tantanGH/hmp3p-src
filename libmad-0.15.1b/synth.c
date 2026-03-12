@@ -1034,7 +1034,6 @@ void synth_full(struct mad_synth *synth, struct mad_frame const *frame,
       MLA(hi, lo, (*fe)[7], ptr[ 2]);
 
       *pcm1++ = SHIFT(MLZ(hi, lo));
-
       pcm2 = pcm1 + 30;
 
       for (sb = 1; sb < 16; ++sb) {

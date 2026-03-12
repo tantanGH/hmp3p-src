@@ -46,7 +46,9 @@ _COMMON_FLAGS="-m68060 -msoft-float -mstrict-align -O3 \
     -falign-functions=16 -falign-loops=16 \
     -fno-unroll-loops -fno-peel-loops -fno-if-conversion \
     ${INCLUDE_FLAGS}"
+
 COMMON_FLAGS="-m68060 -msoft-float -mstrict-align -O3 \
+    -fcall-used-d2 -fcall-used-a2 \ 
     -fomit-frame-pointer -fstrict-aliasing \
     -finline-functions -finline-limit=5000 \
     -falign-functions=16 -falign-loops=16 \
@@ -57,7 +59,7 @@ _CFLAGS="${COMMON_FLAGS} -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall
     -fexec-charset=cp932 -fverbose-asm -fno-defer-pop -D_TIME_T_DECLARED -D_CLOCK_T_DECLARED -Dwint_t=int \
 		-DXDEV68K -DFPM_DEFAULT -DOPT_SPEED -DOPT_SSO \
     -D__OPT_X68K_HIMEM__ -D__OPT_X68K_FAST_FRAME_DECODE__ -D__OPT_X68K_FAST_LAYER_DECODE__"
-CFLAGS="${COMMON_FLAGS} -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall-used-a2 \
+CFLAGS="${COMMON_FLAGS} -Wno-builtin-declaration-mismatch \
     -fexec-charset=cp932 -fverbose-asm \
 		-DXDEV68K -DFPM_DEFAULT -DOPT_SPEED -DOPT_SSO \
     -D__OPT_X68K_HIMEM__ -D__OPT_X68K_FAST_FRAME_DECODE__ -D__OPT_X68K_FAST_LAYER_DECODE__"

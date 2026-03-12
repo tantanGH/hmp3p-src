@@ -137,6 +137,45 @@ exit:
   return mpu_type;
 }
 
+#ifdef __mc68060__
+//
+//  cache mode
+//    0 ... cache on, write through
+//    1 ... cache on, copy back
+//    2 ... cache off, store buffer off
+//    3 ... cache off, store buffer on
+//
+static int32_t set_page_cache_mode(void* addr, int32_t mode) {
+
+  struct REGS in_regs = { 0 };
+  struct REGS out_regs = { 0 };
+
+  in_regs.d0 = 0xac;      // IOCS _SYS_STAT
+  in_regs.d1 = 0x8004;    // set cache mode
+  in_regs.d2 = mode;
+  in_regs.a1 = (uint32_t)addr;
+
+  TRAP15(&in_regs, &out_regs);
+
+  return out_regs.d0;
+}
+
+void set_buffer_cache_mode(void* buffer, size_t size, int32_t mode) {
+
+  // 4KBのマスク（4096 - 1 = 0xFFF）
+  uintptr_t start_addr = (uintptr_t)buffer;
+  uintptr_t end_addr = start_addr + size;
+    
+  // 4KB単位の境界まで切り下げたアドレスから開始
+  uintptr_t page_start = start_addr & ~(4096 - 1);
+    
+  // 設定が必要なページ分だけループ
+  for (uintptr_t p = page_start; p < end_addr; p += 4096) {
+    set_page_cache_mode((void*)p, mode);
+  }
+}
+#endif
+
 //
 //  show help message
 //
@@ -393,6 +432,9 @@ try:
     strcpy(error_mes, cp932rsc_himem_shortage);
     goto catch;
   }
+#ifdef __OPT_X68K_PAGE_CACHE_CONTROL__
+  set_buffer_cache_mode(fread_buffer,fread_buffer_len,1);
+#endif
 
   // read whole mp3 file content into high memory
   if (staging_file_read) {
@@ -542,6 +584,9 @@ try:
         strcpy(error_mes, cp932rsc_himem_shortage);
         goto catch;
       }
+#ifdef __OPT_X68K_PAGE_CACHE_CONTROL__
+      set_buffer_cache_mode(ct->buffer,CHAIN_TABLE_EX_BUFFER_BYTES,0);
+#endif
 
       // decode mp3 stream into pcm data buffer as much as possible
       size_t decoded_bytes;
@@ -789,6 +834,9 @@ try:
           strcpy(error_mes, cp932rsc_himem_shortage);
           goto catch;
         }
+#ifdef __OPT_X68K_PAGE_CACHE_CONTROL__
+      set_buffer_cache_mode(ct->buffer,CHAIN_TABLE_EX_BUFFER_BYTES,0);
+#endif
 
         // decode mp3 stream into pcm buffer
         size_t decoded_bytes;

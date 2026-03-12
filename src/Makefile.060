@@ -35,18 +35,24 @@ INCLUDE_FLAGS = -I${XDEV68K_DIR}/include/xc -I${XDEV68K_DIR}/include/xdev68k -I$
 
 # コンパイルフラグ
 _COMMON_FLAGS = -m68060 -msoft-float -O3 -fomit-frame-pointer \
+		-fno-builtin \
+		${INCLUDE_FLAGS}
+_COMMON_FLAGS = -m68060 -msoft-float -O3 -fomit-frame-pointer \
 		-finline-functions -finline-limit=10000 \
     	-funroll-loops -fpeel-loops \
     	-falign-functions=16 -falign-loops=16 \
     	-fno-builtin -mno-strict-align \
 		${INCLUDE_FLAGS}
-_COMMON_FLAGS = -m68060 -msoft-float -O3 -fomit-frame-pointer \
-		-fno-builtin \
-		${INCLUDE_FLAGS}
-COMMON_FLAGS = -m68060 -msoft-float -mstrict-align -O3 \
+_COMMON_FLAGS = -m68060 -msoft-float -mstrict-align -O3 \
     -fomit-frame-pointer -fstrict-aliasing \
     -finline-functions -finline-limit=10000 \
     -falign-functions=16 -falign-loops=16 \
+    -fno-unroll-loops -fno-peel-loops -fno-builtin \
+    ${INCLUDE_FLAGS}
+COMMON_FLAGS = -m68060 -msoft-float -Os \
+    -fomit-frame-pointer -fstrict-aliasing \
+    -finline-functions -finline-limit=10000 \
+    -falign-functions=16 \
     -fno-unroll-loops -fno-peel-loops -fno-builtin \
     ${INCLUDE_FLAGS}
 
@@ -56,8 +62,7 @@ _CFLAGS = $(COMMON_FLAGS) -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcal
 	-D__OPT_X68K_INLINE_SCALE__ -D__NO_OPT_X68K_INLINE_MACRO_SCALE__ -D__NO_OPT_X68K_INTERLEAVED_16BIT_DIRECT__
 CFLAGS = $(COMMON_FLAGS) -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall-used-a2 \
     -fexec-charset=cp932 -fverbose-asm \
-	-D__VERBOSE__ -D__NO_VERBOSE2__ -D__NO_VERBOSE3__ \
-	-D__OPT_X68K_INLINE_SCALE__ -D__NO_OPT_X68K_INLINE_MACRO_SCALE__ -D__NO_OPT_X68K_INTERLEAVED_16BIT_DIRECT__
+	-D__VERBOSE__ -D__NO_VERBOSE2__ -D__NO_VERBOSE3__
 
 # *.c ソースファイル
 C_SRCS = himem.c crtc.c pcm8a.c pcm8pp.c mp3_decode.c picojpeg.c jpeg_decode.c main.c
