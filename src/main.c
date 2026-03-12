@@ -974,9 +974,6 @@ exit:
 
   // resume pcm8pp settings
   if (pcm8pp_isavailable()) {
-#ifdef __VERBOSE__
-    printf("g_original_pcm8pp_max_channels = %d\n", g_original_pcm8pp_max_channels);
-#endif
     if (g_original_pcm8pp_frequency_mode > 0) pcm8pp_set_frequency_mode(g_original_pcm8pp_frequency_mode);
     if (g_original_pcm8pp_max_channels > 0) pcm8pp_set_max_channels(g_original_pcm8pp_max_channels);
   }

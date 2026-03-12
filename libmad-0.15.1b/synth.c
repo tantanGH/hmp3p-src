@@ -29,6 +29,48 @@
 # include "frame.h"
 # include "synth.h"
 
+#ifdef __OPT_X68K_16BIT_PCM_DIRECT__
+//
+//  inline helper: 24bit signed int to 16bit signed int
+//
+static inline int16_t __attribute__((hot)) scale_16bit(mad_fixed_t sample) {
+
+  // round
+  sample += (1L << (MAD_F_FRACBITS - 16));
+
+  // clip
+  if (sample >= MAD_F_ONE) {
+    sample = MAD_F_ONE - 1;
+  }
+  if (sample < -MAD_F_ONE) {
+    sample = -MAD_F_ONE;
+  }
+
+  // quantize
+  return sample >> (MAD_F_FRACBITS + 1 - 16);
+}
+
+//
+//  inline helper: 24bit signed int to 12bit signed int
+//
+static inline int16_t scale_12bit(mad_fixed_t sample) {
+
+  // round
+  sample += (1L << (MAD_F_FRACBITS - 12));
+
+  // clip
+  if (sample >= MAD_F_ONE) {
+    sample = MAD_F_ONE - 1;
+  }
+  if (sample < -MAD_F_ONE) {
+    sample = -MAD_F_ONE;
+  }
+
+  // quantize
+  return sample >> (MAD_F_FRACBITS + 1 - 12);
+}
+#endif
+
 /*
  * NAME:	synth->init()
  * DESCRIPTION:	initialize synth struct
@@ -120,7 +162,7 @@ void mad_synth_mute(struct mad_synth *synth)
  * DESCRIPTION:	perform fast in[32]->out[32] DCT
  */
 static
-void dct32(mad_fixed_t const in[32], unsigned int slot,
+void __attribute__((hot)) dct32(mad_fixed_t const in[32], unsigned int slot,
 	   mad_fixed_t lo[16][8], mad_fixed_t hi[16][8])
 {
   mad_fixed_t t0,   t1,   t2,   t3,   t4,   t5,   t6,   t7;
@@ -549,240 +591,39 @@ mad_fixed_t const D[17][32] __attribute__((aligned(16))) = {
 # if defined(ASO_SYNTH)
 void synth_full(struct mad_synth *, struct mad_frame const *,
 		unsigned int, unsigned int);
-# else
 
-
-#ifdef __OPT_X68K_INLINE_SYNTH__
-
-//#pragma GCC push_options
-//#pragma GCC optimize ("O3")
+#elif __OPT_X68K_16BIT_PCM_DIRECT__
 
 /*
- * synth_full / synth_half - MC68060 最適化版
- *
- * 修正履歴:
- *   v1: 初版
- *   v2: FIR16_PCM1 の fe アクセス順バグ修正
- *   v3: インラインアセンブラ出力制約バグ修正
- *       "=d"(result) は GCC が d0..d7 を自由に選ぶため
- *       asr.l #2,d0 (d0固定) と矛盾 → move.l d0,%[result] で明示コピー
- *   v4: synth_half 追加
- *
- * 共通マクロ FIR16_PCM1 / FIR16_PCM2 を synth_full と synth_half で共用。
- * synth_half の pcm2 側は fo/fe の順序が synth_full と逆だが加算は可換なので
- * FIR16_PCM2 の引数順を入れ替えて呼ぶだけでよい。
+ * NAME:	synth->full()
+ * DESCRIPTION:	perform full frequency PCM synthesis
  */
-
-/* ---------------------------------------------------------------
- * FIR16_PCM1: pcm1 書き込み用 16-tap FIR (synth_full/half 共用)
- *
- *   sum = -( fo[0]*D[po+ 0] + fo[1]*D[po+14] + fo[2]*D[po+12]
- *           + fo[3]*D[po+10] + fo[4]*D[po+ 8] + fo[5]*D[po+ 6]
- *           + fo[6]*D[po+ 4] + fo[7]*D[po+ 2] )
- *         + fe[7]*D[pe+ 2] + fe[6]*D[pe+ 4] + fe[5]*D[pe+ 6]
- *         + fe[4]*D[pe+ 8] + fe[3]*D[pe+10] + fe[2]*D[pe+12]
- *         + fe[1]*D[pe+14] + fe[0]*D[pe+ 0]
- *
- * バイトオフセット (mad_fixed_t = 4 bytes):
- *   fo[n] = n*4(%[fo]),  fe[n] = n*4(%[fe])
- *   D[po+k] = k*4(%[dpo]),  D[pe+k] = k*4(%[dpe])
- * --------------------------------------------------------------- */
-#define FIR16_PCM1(fo_ptr, fe_ptr, dpo, dpe, result)           \
-__asm__ __volatile__ (                                          \
-    /* --- odd part: neg(fo · D[po]) --- */                     \
-    "move.l  (%[p1fo]),d0\n\t"     /* fo[0] */                  \
-    "move.l  (%[p1a]),d1\n\t"      /* D[po+0] */                \
-    "move.l  4(%[p1fo]),d2\n\t"    /* fo[1] */                  \
-    "move.l  56(%[p1a]),d3\n\t"    /* D[po+14] */               \
-    "muls.l  d1,d0\n\t"                                         \
-    "muls.l  d3,d2\n\t"                                         \
-    "move.l  8(%[p1fo]),d4\n\t"    /* fo[2] */                  \
-    "move.l  48(%[p1a]),d5\n\t"    /* D[po+12] */               \
-    "add.l   d2,d0\n\t"                                         \
-    "muls.l  d5,d4\n\t"                                         \
-    "move.l  12(%[p1fo]),d2\n\t"   /* fo[3] */                  \
-    "move.l  40(%[p1a]),d3\n\t"    /* D[po+10] */               \
-    "add.l   d4,d0\n\t"                                         \
-    "muls.l  d3,d2\n\t"                                         \
-    "move.l  16(%[p1fo]),d4\n\t"   /* fo[4] */                  \
-    "move.l  32(%[p1a]),d5\n\t"    /* D[po+8] */                \
-    "add.l   d2,d0\n\t"                                         \
-    "muls.l  d5,d4\n\t"                                         \
-    "move.l  20(%[p1fo]),d2\n\t"   /* fo[5] */                  \
-    "move.l  24(%[p1a]),d3\n\t"    /* D[po+6] */                \
-    "add.l   d4,d0\n\t"                                         \
-    "muls.l  d3,d2\n\t"                                         \
-    "move.l  24(%[p1fo]),d4\n\t"   /* fo[6] */                  \
-    "move.l  16(%[p1a]),d5\n\t"    /* D[po+4] */                \
-    "add.l   d2,d0\n\t"                                         \
-    "muls.l  d5,d4\n\t"                                         \
-    "move.l  28(%[p1fo]),d2\n\t"   /* fo[7] */                  \
-    "move.l  8(%[p1a]),d3\n\t"     /* D[po+2] */                \
-    "add.l   d4,d0\n\t"                                         \
-    "muls.l  d3,d2\n\t"                                         \
-    "add.l   d2,d0\n\t"                                         \
-    "neg.l   d0\n\t"               /* MLN */                    \
-    /* --- even part: fe[7..0] · D[pe+2,4,6,8,10,12,14,0] --- */\
-    "move.l  28(%[p1fe]),d1\n\t"   /* fe[7] */                  \
-    "move.l  8(%[p1b]),d2\n\t"     /* D[pe+2] */                \
-    "move.l  24(%[p1fe]),d3\n\t"   /* fe[6] */                  \
-    "move.l  16(%[p1b]),d4\n\t"    /* D[pe+4] */                \
-    "muls.l  d2,d1\n\t"                                         \
-    "muls.l  d4,d3\n\t"                                         \
-    "move.l  20(%[p1fe]),d5\n\t"   /* fe[5] */                  \
-    "move.l  24(%[p1b]),d6\n\t"    /* D[pe+6] */                \
-    "add.l   d3,d1\n\t"                                         \
-    "muls.l  d6,d5\n\t"                                         \
-    "move.l  16(%[p1fe]),d2\n\t"   /* fe[4] */                  \
-    "move.l  32(%[p1b]),d3\n\t"    /* D[pe+8] */                \
-    "add.l   d5,d1\n\t"                                         \
-    "muls.l  d3,d2\n\t"                                         \
-    "move.l  12(%[p1fe]),d5\n\t"   /* fe[3] */                  \
-    "move.l  40(%[p1b]),d6\n\t"    /* D[pe+10] */               \
-    "add.l   d2,d1\n\t"                                         \
-    "muls.l  d6,d5\n\t"                                         \
-    "move.l  8(%[p1fe]),d2\n\t"    /* fe[2] */                  \
-    "move.l  48(%[p1b]),d3\n\t"    /* D[pe+12] */               \
-    "add.l   d5,d1\n\t"                                         \
-    "muls.l  d3,d2\n\t"                                         \
-    "move.l  4(%[p1fe]),d5\n\t"    /* fe[1] */                  \
-    "move.l  56(%[p1b]),d6\n\t"    /* D[pe+14] */               \
-    "add.l   d2,d1\n\t"                                         \
-    "muls.l  d6,d5\n\t"                                         \
-    "move.l  (%[p1fe]),d2\n\t"     /* fe[0] */                  \
-    "move.l  (%[p1b]),d3\n\t"      /* D[pe+0] */                \
-    "add.l   d5,d1\n\t"                                         \
-    "muls.l  d3,d2\n\t"                                         \
-    "add.l   d2,d1\n\t"                                         \
-    "add.l   d1,d0\n\t"                                         \
-    "asr.l   #2,d0\n\t"                                         \
-    "move.l  d0,%[result]\n\t"                                  \
-    : [result] "=d" (result)                                    \
-    : [p1fo] "a" (fo_ptr),                                      \
-      [p1fe] "a" (fe_ptr),                                      \
-      [p1a]  "a" (dpo),                                         \
-      [p1b]  "a" (dpe)                                          \
-    : "d0","d1","d2","d3","d4","d5","d6","cc"                   \
-)
-
-/* ---------------------------------------------------------------
- * FIR16_PCM2: pcm2 書き込み用 16-tap FIR (synth_full/half 共用)
- *
- * synth_full の呼び出し:
- *   FIR16_PCM2(*fo, *fe, *Dptr-pe, *Dptr-po, result)
- *   sum = fe[0..7]·D[-pe+15..29] + fo[7..0]·D[-po+29..15]
- *
- * synth_half の呼び出し (fo/fe が逆順だが加算は可換):
- *   FIR16_PCM2(*fo, *fe, *Dptr-po, *Dptr-pe, result)
- *   ※ 第3引数に dnpo、第4引数に dnpe を渡す
- *
- * マクロ内部は「第1引数[7..0]·第3引数オフセット + 第2引数[0..7]·第4引数オフセット」
- * として統一。引数の組み合わせで両方に対応。
- *
- * バイトオフセット: ptr[15]=+60, ptr[17]=+68, ..., ptr[29]=+116
- * --------------------------------------------------------------- */
-/* 制約シンボル名は p2fo/p2fe/p2a/p2b で固定し、マクロ引数名と切り離す */
-#define FIR16_PCM2(fo_ptr, fe_ptr, dn1, dn2, result)           \
-__asm__ __volatile__ (                                          \
-    /* --- fo[7..0] · p2a[29,27,...,15] --- */                  \
-    "move.l  28(%[p2fo]),d0\n\t"   /* fo[7] */                  \
-    "move.l  116(%[p2a]),d1\n\t"   /* dn1[29] */                \
-    "move.l  24(%[p2fo]),d2\n\t"   /* fo[6] */                  \
-    "move.l  108(%[p2a]),d3\n\t"   /* dn1[27] */                \
-    "muls.l  d1,d0\n\t"                                         \
-    "muls.l  d3,d2\n\t"                                         \
-    "move.l  20(%[p2fo]),d4\n\t"   /* fo[5] */                  \
-    "move.l  100(%[p2a]),d5\n\t"   /* dn1[25] */                \
-    "add.l   d2,d0\n\t"                                         \
-    "muls.l  d5,d4\n\t"                                         \
-    "move.l  16(%[p2fo]),d2\n\t"   /* fo[4] */                  \
-    "move.l  92(%[p2a]),d3\n\t"    /* dn1[23] */                \
-    "add.l   d4,d0\n\t"                                         \
-    "muls.l  d3,d2\n\t"                                         \
-    "move.l  12(%[p2fo]),d4\n\t"   /* fo[3] */                  \
-    "move.l  84(%[p2a]),d5\n\t"    /* dn1[21] */                \
-    "add.l   d2,d0\n\t"                                         \
-    "muls.l  d5,d4\n\t"                                         \
-    "move.l  8(%[p2fo]),d2\n\t"    /* fo[2] */                  \
-    "move.l  76(%[p2a]),d3\n\t"    /* dn1[19] */                \
-    "add.l   d4,d0\n\t"                                         \
-    "muls.l  d3,d2\n\t"                                         \
-    "move.l  4(%[p2fo]),d4\n\t"    /* fo[1] */                  \
-    "move.l  68(%[p2a]),d5\n\t"    /* dn1[17] */                \
-    "add.l   d2,d0\n\t"                                         \
-    "muls.l  d5,d4\n\t"                                         \
-    "move.l  (%[p2fo]),d2\n\t"     /* fo[0] */                  \
-    "move.l  60(%[p2a]),d3\n\t"    /* dn1[15] */                \
-    "add.l   d4,d0\n\t"                                         \
-    "muls.l  d3,d2\n\t"                                         \
-    "add.l   d2,d0\n\t"                                         \
-    /* --- fe[0..7] · p2b[15,17,...,29] --- */                  \
-    "move.l  (%[p2fe]),d1\n\t"     /* fe[0] */                  \
-    "move.l  60(%[p2b]),d2\n\t"    /* dn2[15] */                \
-    "move.l  4(%[p2fe]),d3\n\t"    /* fe[1] */                  \
-    "move.l  68(%[p2b]),d4\n\t"    /* dn2[17] */                \
-    "muls.l  d2,d1\n\t"                                         \
-    "muls.l  d4,d3\n\t"                                         \
-    "move.l  8(%[p2fe]),d5\n\t"    /* fe[2] */                  \
-    "move.l  76(%[p2b]),d6\n\t"    /* dn2[19] */                \
-    "add.l   d3,d1\n\t"                                         \
-    "muls.l  d6,d5\n\t"                                         \
-    "move.l  12(%[p2fe]),d2\n\t"   /* fe[3] */                  \
-    "move.l  84(%[p2b]),d3\n\t"    /* dn2[21] */                \
-    "add.l   d5,d1\n\t"                                         \
-    "muls.l  d3,d2\n\t"                                         \
-    "move.l  16(%[p2fe]),d5\n\t"   /* fe[4] */                  \
-    "move.l  92(%[p2b]),d6\n\t"    /* dn2[23] */                \
-    "add.l   d2,d1\n\t"                                         \
-    "muls.l  d6,d5\n\t"                                         \
-    "move.l  20(%[p2fe]),d2\n\t"   /* fe[5] */                  \
-    "move.l  100(%[p2b]),d3\n\t"   /* dn2[25] */                \
-    "add.l   d5,d1\n\t"                                         \
-    "muls.l  d3,d2\n\t"                                         \
-    "move.l  24(%[p2fe]),d5\n\t"   /* fe[6] */                  \
-    "move.l  108(%[p2b]),d6\n\t"   /* dn2[27] */                \
-    "add.l   d2,d1\n\t"                                         \
-    "muls.l  d6,d5\n\t"                                         \
-    "move.l  28(%[p2fe]),d2\n\t"   /* fe[7] */                  \
-    "move.l  116(%[p2b]),d3\n\t"   /* dn2[29] */                \
-    "add.l   d5,d1\n\t"                                         \
-    "muls.l  d3,d2\n\t"                                         \
-    "add.l   d2,d1\n\t"                                         \
-    "add.l   d1,d0\n\t"                                         \
-    "asr.l   #2,d0\n\t"                                         \
-    "move.l  d0,%[result]\n\t"                                  \
-    : [result] "=d" (result)                                    \
-    : [p2fo] "a" (fo_ptr),                                      \
-      [p2fe] "a" (fe_ptr),                                      \
-      [p2a]  "a" (dn1),                                         \
-      [p2b]  "a" (dn2)                                          \
-    : "d0","d1","d2","d3","d4","d5","d6","cc"                   \
-)
-
-/* ===============================================================
- * synth_full
- * =============================================================== */
-static
-void synth_full(struct mad_synth *synth, struct mad_frame const *frame,
-		unsigned int nch, unsigned int ns)
+ static void synth_full(struct mad_synth *synth, struct mad_frame const *frame,
+                       unsigned int nch, unsigned int ns)
 {
   unsigned int phase, ch, s, sb, pe, po;
-  mad_fixed_t *pcm1, *pcm2, (*filter)[2][2][16][8];
+  mad_fixed_t (*filter)[2][2][16][8];
   mad_fixed_t const (*sbsample)[36][32];
   register mad_fixed_t (*fe)[8], (*fx)[8], (*fo)[8];
   register mad_fixed_t const (*Dptr)[32], *ptr;
   register mad_fixed64hi_t hi;
   register mad_fixed64lo_t lo;
 
+  // 16bit PCM出力用のポインタ
+  short *pcm1_16bit;
+  short *pcm2_16bit;
+
   for (ch = 0; ch < nch; ++ch) {
     sbsample = &frame->sbsample[ch];
     filter   = &synth->filter[ch];
     phase    = synth->phase;
-    pcm1     = synth->pcm.samples[ch];
+    
+    // ch=0なら左、ch=1なら右のアドレスから開始
+    pcm1_16bit = synth->pcm_16bit + ch;
 
     for (s = 0; s < ns; ++s) {
       dct32((*sbsample)[s], phase >> 1,
-	    (*filter)[0][phase & 1], (*filter)[1][phase & 1]);
+            (*filter)[0][phase & 1], (*filter)[1][phase & 1]);
 
       pe = phase & ~1;
       po = ((phase - 1) & 0xf) | 1;
@@ -793,7 +634,7 @@ void synth_full(struct mad_synth *synth, struct mad_frame const *frame,
 
       Dptr = &D[0];
 
-      /* ---- sb=0: pcm1[0] (fx使用、Cのまま) ---- */
+      /* --- Sample 0 --- */
       ptr = *Dptr + po;
       ML0(hi, lo, (*fx)[0], ptr[ 0]);
       MLA(hi, lo, (*fx)[1], ptr[14]);
@@ -804,6 +645,7 @@ void synth_full(struct mad_synth *synth, struct mad_frame const *frame,
       MLA(hi, lo, (*fx)[6], ptr[ 4]);
       MLA(hi, lo, (*fx)[7], ptr[ 2]);
       MLN(hi, lo);
+
       ptr = *Dptr + pe;
       MLA(hi, lo, (*fe)[0], ptr[ 0]);
       MLA(hi, lo, (*fe)[1], ptr[14]);
@@ -813,33 +655,70 @@ void synth_full(struct mad_synth *synth, struct mad_frame const *frame,
       MLA(hi, lo, (*fe)[5], ptr[ 6]);
       MLA(hi, lo, (*fe)[6], ptr[ 4]);
       MLA(hi, lo, (*fe)[7], ptr[ 2]);
-      *pcm1++ = SHIFT(MLZ(hi, lo));
 
-      pcm2 = pcm1 + 30;
+      // 直接 16bit に変換して書き込み
+      *pcm1_16bit = scale_16bit(SHIFT(MLZ(hi, lo)));
+      
+      // pcm1 は前方へ、pcm2 は末尾（31サンプル目）から後方へ
+      // pcm1_16bit は現在の位置、pcm2_16bit はそこから 31 サンプル先の位置
+      pcm2_16bit = pcm1_16bit + (31 * nch);
+      pcm1_16bit += nch; 
 
-      /* ---- sb=1..15 ---- */
+      /* --- Samples 1-15 and 17-31 --- */
       for (sb = 1; sb < 16; ++sb) {
-        ++fe;
-        ++Dptr;
+        ++fe; ++Dptr;
 
-        /* pcm1: neg(fo·D[po]) + fe[7..0]·D[pe+2,4,...,0] */
-        /* pcm2: fo[7..0]·D[-po+29..15] + fe[0..7]·D[-pe+15..29] */
-        {
-          const mad_fixed_t *dpo  = *Dptr + po;
-          const mad_fixed_t *dpe  = *Dptr + pe;
-          const mad_fixed_t *dnpo = *Dptr - po;
-          const mad_fixed_t *dnpe = *Dptr - pe;
-          mad_fixed_t result;
-          FIR16_PCM1(*fo, *fe, dpo, dpe, result);
-          *pcm1++ = result;
-          FIR16_PCM2(*fo, *fe, dnpo, dnpe, result);
-          *pcm2-- = result;
-        }
+        ptr = *Dptr + po;
+        ML0(hi, lo, (*fo)[0], ptr[ 0]);
+        MLA(hi, lo, (*fo)[1], ptr[14]);
+        MLA(hi, lo, (*fo)[2], ptr[12]);
+        MLA(hi, lo, (*fo)[3], ptr[10]);
+        MLA(hi, lo, (*fo)[4], ptr[ 8]);
+        MLA(hi, lo, (*fo)[5], ptr[ 6]);
+        MLA(hi, lo, (*fo)[6], ptr[ 4]);
+        MLA(hi, lo, (*fo)[7], ptr[ 2]);
+        MLN(hi, lo);
+
+        ptr = *Dptr + pe;
+        MLA(hi, lo, (*fe)[7], ptr[ 2]);
+        MLA(hi, lo, (*fe)[6], ptr[ 4]);
+        MLA(hi, lo, (*fe)[5], ptr[ 6]);
+        MLA(hi, lo, (*fe)[4], ptr[ 8]);
+        MLA(hi, lo, (*fe)[3], ptr[10]);
+        MLA(hi, lo, (*fe)[2], ptr[12]);
+        MLA(hi, lo, (*fe)[1], ptr[14]);
+        MLA(hi, lo, (*fe)[0], ptr[ 0]);
+
+        *pcm1_16bit = scale_16bit(SHIFT(MLZ(hi, lo)));
+        pcm1_16bit += nch;
+
+        ptr = *Dptr - pe;
+        ML0(hi, lo, (*fe)[0], ptr[15]);
+        MLA(hi, lo, (*fe)[1], ptr[17]);
+        MLA(hi, lo, (*fe)[2], ptr[19]);
+        MLA(hi, lo, (*fe)[3], ptr[21]);
+        MLA(hi, lo, (*fe)[4], ptr[23]);
+        MLA(hi, lo, (*fe)[5], ptr[25]);
+        MLA(hi, lo, (*fe)[6], ptr[27]);
+        MLA(hi, lo, (*fe)[7], ptr[29]);
+
+        ptr = *Dptr - po;
+        MLA(hi, lo, (*fo)[7], ptr[29]);
+        MLA(hi, lo, (*fo)[6], ptr[27]);
+        MLA(hi, lo, (*fo)[5], ptr[25]);
+        MLA(hi, lo, (*fo)[4], ptr[23]);
+        MLA(hi, lo, (*fo)[3], ptr[21]);
+        MLA(hi, lo, (*fo)[2], ptr[19]);
+        MLA(hi, lo, (*fo)[1], ptr[17]);
+        MLA(hi, lo, (*fo)[0], ptr[15]);
+
+        *pcm2_16bit = scale_16bit(SHIFT(MLZ(hi, lo)));
+        pcm2_16bit -= nch;
 
         ++fo;
       }
 
-      /* ---- sb=16: pcm1[16] (Cのまま) ---- */
+      /* --- Sample 16 --- */
       ++Dptr;
       ptr = *Dptr + po;
       ML0(hi, lo, (*fo)[0], ptr[ 0]);
@@ -850,50 +729,50 @@ void synth_full(struct mad_synth *synth, struct mad_frame const *frame,
       MLA(hi, lo, (*fo)[5], ptr[ 6]);
       MLA(hi, lo, (*fo)[6], ptr[ 4]);
       MLA(hi, lo, (*fo)[7], ptr[ 2]);
-      *pcm1 = SHIFT(-MLZ(hi, lo));
-      pcm1 += 16;
+
+      *pcm1_16bit = scale_16bit(SHIFT(-MLZ(hi, lo)));
+      
+      // 次の32サンプルブロックの先頭へ移動
+      // すでに pcm1_16bit は 16回+移動しているので、帳尻を合わせる
+      pcm1_16bit += (16 * nch); 
 
       phase = (phase + 1) % 16;
     }
   }
 }
 
-/* ===============================================================
- * synth_half
- *
- * synth_full との差分:
- *   - sb ループで偶数 sb のみ pcm1/pcm2 を書く (!(sb & 1))
- *   - pcm2 = pcm1 + 14  (fullは +30)
- *   - 最後 pcm1 += 8    (fullは +16)
- *   - pcm2 の FIR: Cコードでは fo が先・fe が後の順だが
- *     加算は可換なので FIR16_PCM2 の dn1/dn2 引数を入れ替えて対応
- *       dn1 = *Dptr - po  (fo側)
- *       dn2 = *Dptr - pe  (fe側)
- * =============================================================== */
 static
 void synth_half(struct mad_synth *synth, struct mad_frame const *frame,
-		unsigned int nch, unsigned int ns)
+    unsigned int nch, unsigned int ns)
 {
   unsigned int phase, ch, s, sb, pe, po;
-  mad_fixed_t *pcm1, *pcm2, (*filter)[2][2][16][8];
+  mad_fixed_t (*filter)[2][2][16][8];
   mad_fixed_t const (*sbsample)[36][32];
   register mad_fixed_t (*fe)[8], (*fx)[8], (*fo)[8];
   register mad_fixed_t const (*Dptr)[32], *ptr;
   register mad_fixed64hi_t hi;
   register mad_fixed64lo_t lo;
 
+  // 16bit PCM出力用のポインタ
+  short *pcm1_16bit;
+  short *pcm2_16bit;
+
   for (ch = 0; ch < nch; ++ch) {
     sbsample = &frame->sbsample[ch];
     filter   = &synth->filter[ch];
     phase    = synth->phase;
-    pcm1     = synth->pcm.samples[ch];
+    
+    // ch=0なら左、ch=1なら右のアドレスから開始
+    pcm1_16bit = synth->pcm_16bit + ch;
 
     for (s = 0; s < ns; ++s) {
       dct32((*sbsample)[s], phase >> 1,
-	    (*filter)[0][phase & 1], (*filter)[1][phase & 1]);
+      (*filter)[0][phase & 1], (*filter)[1][phase & 1]);
 
       pe = phase & ~1;
       po = ((phase - 1) & 0xf) | 1;
+
+      /* calculate 16 samples */
 
       fe = &(*filter)[0][ phase & 1][0];
       fx = &(*filter)[0][~phase & 1][0];
@@ -901,7 +780,7 @@ void synth_half(struct mad_synth *synth, struct mad_frame const *frame,
 
       Dptr = &D[0];
 
-      /* ---- sb=0: pcm1[0] (fx使用、Cのまま) ---- */
+      /* --- Sample 0 --- */
       ptr = *Dptr + po;
       ML0(hi, lo, (*fx)[0], ptr[ 0]);
       MLA(hi, lo, (*fx)[1], ptr[14]);
@@ -912,6 +791,7 @@ void synth_half(struct mad_synth *synth, struct mad_frame const *frame,
       MLA(hi, lo, (*fx)[6], ptr[ 4]);
       MLA(hi, lo, (*fx)[7], ptr[ 2]);
       MLN(hi, lo);
+
       ptr = *Dptr + pe;
       MLA(hi, lo, (*fe)[0], ptr[ 0]);
       MLA(hi, lo, (*fe)[1], ptr[14]);
@@ -921,38 +801,75 @@ void synth_half(struct mad_synth *synth, struct mad_frame const *frame,
       MLA(hi, lo, (*fe)[5], ptr[ 6]);
       MLA(hi, lo, (*fe)[6], ptr[ 4]);
       MLA(hi, lo, (*fe)[7], ptr[ 2]);
-      *pcm1++ = SHIFT(MLZ(hi, lo));
 
-      pcm2 = pcm1 + 14;  /* half: +14 (fullは +30) */
+      // 直接 16bit に変換して書き込み
+      *pcm1_16bit = scale_16bit(SHIFT(MLZ(hi, lo)));
+      
+      // pcm2は15サンプル先から戻る方向にセット
+      pcm2_16bit = pcm1_16bit + (15 * nch);
+      pcm1_16bit += nch;
 
-      /* ---- sb=1..15 ---- */
       for (sb = 1; sb < 16; ++sb) {
         ++fe;
         ++Dptr;
 
-        if (!(sb & 1)) {
-          /* 偶数 sb のみ出力 */
+        /* D[32 - sb][i] == -D[sb][31 - i] */
 
-          /* pcm1/pcm2 両方計算。Dptr からの加減算を先にポインタへ。 */
-          {
-            const mad_fixed_t *dpo  = *Dptr + po;
-            const mad_fixed_t *dpe  = *Dptr + pe;
-            const mad_fixed_t *dnpo = *Dptr - po;
-            const mad_fixed_t *dnpe = *Dptr - pe;
-            mad_fixed_t result;
-            FIR16_PCM1(*fo, *fe, dpo, dpe, result);
-            *pcm1++ = result;
-            /* pcm2: Cコードは fo先だが加算可換、FIR16_PCM2 と同一引数順で正しい */
-            FIR16_PCM2(*fo, *fe, dnpo, dnpe, result);
-            *pcm2-- = result;
-          }
+        if (!(sb & 1)) {
+          ptr = *Dptr + po;
+          ML0(hi, lo, (*fo)[0], ptr[ 0]);
+          MLA(hi, lo, (*fo)[1], ptr[14]);
+          MLA(hi, lo, (*fo)[2], ptr[12]);
+          MLA(hi, lo, (*fo)[3], ptr[10]);
+          MLA(hi, lo, (*fo)[4], ptr[ 8]);
+          MLA(hi, lo, (*fo)[5], ptr[ 6]);
+          MLA(hi, lo, (*fo)[6], ptr[ 4]);
+          MLA(hi, lo, (*fo)[7], ptr[ 2]);
+          MLN(hi, lo);
+
+          ptr = *Dptr + pe;
+          MLA(hi, lo, (*fe)[7], ptr[ 2]);
+          MLA(hi, lo, (*fe)[6], ptr[ 4]);
+          MLA(hi, lo, (*fe)[5], ptr[ 6]);
+          MLA(hi, lo, (*fe)[4], ptr[ 8]);
+          MLA(hi, lo, (*fe)[3], ptr[10]);
+          MLA(hi, lo, (*fe)[2], ptr[12]);
+          MLA(hi, lo, (*fe)[1], ptr[14]);
+          MLA(hi, lo, (*fe)[0], ptr[ 0]);
+
+          *pcm1_16bit = scale_16bit(SHIFT(MLZ(hi, lo)));
+          pcm1_16bit += nch;
+
+          ptr = *Dptr - po;
+          ML0(hi, lo, (*fo)[7], ptr[29]);
+          MLA(hi, lo, (*fo)[6], ptr[27]);
+          MLA(hi, lo, (*fo)[5], ptr[25]);
+          MLA(hi, lo, (*fo)[4], ptr[23]);
+          MLA(hi, lo, (*fo)[3], ptr[21]);
+          MLA(hi, lo, (*fo)[2], ptr[19]);
+          MLA(hi, lo, (*fo)[1], ptr[17]);
+          MLA(hi, lo, (*fo)[0], ptr[15]);
+
+          ptr = *Dptr - pe;
+          MLA(hi, lo, (*fe)[0], ptr[15]);
+          MLA(hi, lo, (*fe)[1], ptr[17]);
+          MLA(hi, lo, (*fe)[2], ptr[19]);
+          MLA(hi, lo, (*fe)[3], ptr[21]);
+          MLA(hi, lo, (*fe)[4], ptr[23]);
+          MLA(hi, lo, (*fe)[5], ptr[25]);
+          MLA(hi, lo, (*fe)[6], ptr[27]);
+          MLA(hi, lo, (*fe)[7], ptr[29]);
+
+          *pcm2_16bit = scale_16bit(SHIFT(MLZ(hi, lo)));
+          pcm2_16bit -= nch;
         }
 
         ++fo;
       }
 
-      /* ---- sb=16: pcm1[8] (Cのまま) ---- */
       ++Dptr;
+
+      /* --- Final Sample --- */
       ptr = *Dptr + po;
       ML0(hi, lo, (*fo)[0], ptr[ 0]);
       MLA(hi, lo, (*fo)[1], ptr[14]);
@@ -962,15 +879,17 @@ void synth_half(struct mad_synth *synth, struct mad_frame const *frame,
       MLA(hi, lo, (*fo)[5], ptr[ 6]);
       MLA(hi, lo, (*fo)[6], ptr[ 4]);
       MLA(hi, lo, (*fo)[7], ptr[ 2]);
-      *pcm1 = SHIFT(-MLZ(hi, lo));
-      pcm1 += 8;  /* half: +8 (fullは +16) */
+
+      *pcm1_16bit = scale_16bit(SHIFT(-MLZ(hi, lo)));
+      
+      // 次の16サンプルブロックの先頭へ移動
+      // すでに pcm1_16bit は 8回（最初+sbループ内7回）移動しているので、残り 8回分
+      pcm1_16bit += (8 * nch);
 
       phase = (phase + 1) % 16;
     }
   }
 }
-
-//#pragma GCC pop_options
 
 #else
 
@@ -1250,8 +1169,6 @@ void synth_half(struct mad_synth *synth, struct mad_frame const *frame,
     }
   }
 }
-
-#endif
 
 #endif
 

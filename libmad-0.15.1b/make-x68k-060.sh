@@ -48,7 +48,7 @@ _COMMON_FLAGS="-m68060 -msoft-float -mstrict-align -O3 \
     ${INCLUDE_FLAGS}"
 
 COMMON_FLAGS="-m68060 -msoft-float -mstrict-align -O3 \
-    -fcall-used-d2 -fcall-used-a2 \ 
+    -fcall-used-d2 -fcall-used-a2 \
     -fomit-frame-pointer -fstrict-aliasing \
     -finline-functions -finline-limit=5000 \
     -falign-functions=16 -falign-loops=16 \
@@ -62,7 +62,7 @@ _CFLAGS="${COMMON_FLAGS} -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall
 CFLAGS="${COMMON_FLAGS} -Wno-builtin-declaration-mismatch \
     -fexec-charset=cp932 -fverbose-asm \
 		-DXDEV68K -DFPM_DEFAULT -DOPT_SPEED -DOPT_SSO \
-    -D__OPT_X68K_HIMEM__ -D__OPT_X68K_FAST_FRAME_DECODE__ -D__OPT_X68K_FAST_LAYER_DECODE__"
+    -D__OPT_X68K_HIMEM__ -D__OPT_X68K_FAST_FRAME_DECODE__ -D__OPT_X68K_FAST_LAYER_DECODE__ -D__OPT_X68K_16BIT_PCM_DIRECT__"
 
 
 _LIBS="${XDEV68K_DIR}/lib/xc/CLIB.L ${XDEV68K_DIR}/lib/xc/DOSLIB.L ${XDEV68K_DIR}/lib/xc/IOCSLIB.L ${XDEV68K_DIR}/lib/xc/FLOATFNC.L \

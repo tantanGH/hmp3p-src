@@ -248,12 +248,13 @@ int32_t mp3_decode_init(MP3_DECODE_HANDLE* decode) {
   decode->mp3_sample_rate = -1;
   decode->mp3_channels = -1;
   decode->resample_counter = 0;
+  decode->resample_src_buffer = (int16_t*)himem_malloc(sizeof(int16_t) * MAD_MAX_SAMPLES * 2, 1);
 
   // mad
   mad_stream_init(&(decode->mad_stream));
   mad_frame_init(&(decode->mad_frame));
   mad_synth_init(&(decode->mad_synth));
-  mad_timer_reset(&(decode->mad_timer));
+//  mad_timer_reset(&(decode->mad_timer));
   decode->mp3_frame_options = 0;
   decode->current_mad_pcm = NULL;
 
@@ -270,6 +271,10 @@ void mp3_decode_close(MP3_DECODE_HANDLE* decode) {
   mad_frame_finish(&(decode->mad_frame));
   mad_stream_finish(&(decode->mad_stream));
 
+  if (decode->resample_src_buffer != NULL) {
+    himem_free(decode->resample_src_buffer, 1);
+    decode->resample_src_buffer = NULL;
+  }
   if (decode->mp3_title != NULL) {
     himem_free(decode->mp3_title, 0);
     decode->mp3_title = NULL;
@@ -300,6 +305,8 @@ int32_t mp3_decode_setup(MP3_DECODE_HANDLE* decode, void* mp3_data, size_t mp3_d
   // sampling parameters
   decode->mp3_sample_rate = -1;
   decode->mp3_channels = -1;
+
+  // for resampling
   decode->resample_counter = 0;
 
   // mad frame options
@@ -310,7 +317,7 @@ int32_t mp3_decode_setup(MP3_DECODE_HANDLE* decode, void* mp3_data, size_t mp3_d
   mad_stream_init(&(decode->mad_stream));
   mad_frame_init(&(decode->mad_frame));
   mad_synth_init(&(decode->mad_synth));
-  mad_timer_reset(&(decode->mad_timer));
+//  mad_timer_reset(&(decode->mad_timer));
 
   /* allocate Layer III dynamic structures */
 
@@ -386,27 +393,51 @@ int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_
 
       decode->mad_frame.options = decode->mp3_frame_options;
 
+      // --- 16bit直書き出し最適化 ---
+#ifdef __OPT_X68K_16BIT_PCM_DIRECT__
+      // synth_fullが直接書き込む先のポインタをセット
+      // 現在の書き込みオフセット位置を渡す
+      decode->mad_synth.pcm_16bit = &decode_buffer[decode_ofs];
+
+      // バッファオーバーフローの事前チェック
+      // Layer IIIなら最大1152サンプル * 2ch = 2304 samples 分の空きが必要
+      if ((decode_ofs + 2304) * sizeof(int16_t) > decode_buffer_bytes) {
+          break; 
+      }
+#endif
+
 #ifdef __VERBOSE2__
       uint32_t ts0 = ONTIME();
 #endif     
       mad_synth_frame(&(decode->mad_synth), &(decode->mad_frame));
-      //mad_timer_add(&(decode->mad_timer), decode->mad_frame.header.duration);   // not in use
 #ifdef __VERBOSE2__
       uint32_t ts1 = ONTIME();
       ts += ts1 - ts0;
 #endif     
+
+#ifdef __OPT_X68K_16BIT_PCM_DIRECT__
+      // synth_fullの中ですでに書き込みは完了しているので、
+      // 実際に生成されたサンプル数分だけオフセットを進める
+      decode_ofs += (decode->mad_synth.pcm.length * decode->mad_synth.pcm.channels);
+      
+      // 次のフレームへ（変換ループをスキップするためNULLのままにする）
+      decode->current_mad_pcm = NULL; 
+#else
+      // 従来通り、後段の変換ループに処理を任せる
       decode->current_mad_pcm = &(decode->mad_synth.pcm);
+#endif
 
       if (decode->mp3_sample_rate < 0) {
-        decode->mp3_sample_rate = decode->current_mad_pcm->samplerate;
-        decode->mp3_channels = decode->current_mad_pcm->channels;
+        decode->mp3_sample_rate = decode->mad_synth.pcm.samplerate;
+        decode->mp3_channels = decode->mad_synth.pcm.channels;
       }
 
     } 
 
+#ifndef __OPT_X68K_16BIT_PCM_DIRECT__
+    // --- 従来の変換ループ（DIRECTオプション時はコンパイルされない） ---
     MAD_PCM* pcm = decode->current_mad_pcm;
     if (decode_ofs * sizeof(int16_t) + ( pcm->length * 2 * pcm->channels ) > decode_buffer_bytes) {
-      // no more buffer space to write
       break;
     }
 
@@ -420,8 +451,8 @@ int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_
         decode_buffer[ decode_ofs++ ] = scale_16bit(pcm->samples[0][i]);
       }
     }
-
     decode->current_mad_pcm = NULL;
+#endif
 
   }
 
@@ -466,7 +497,6 @@ int32_t mp3_decode_resample(MP3_DECODE_HANDLE* decode, int16_t* resample_buffer,
       int16_t result = mad_frame_decode(&(decode->mad_frame), &(decode->mad_stream));
       if (result == -1) {
         if (decode->mad_stream.error == MAD_ERROR_BUFLEN) {
-          // MP3 EOF
           break;
         } else if (MAD_RECOVERABLE(decode->mad_stream.error)) {
           continue;
@@ -477,67 +507,78 @@ int32_t mp3_decode_resample(MP3_DECODE_HANDLE* decode, int16_t* resample_buffer,
       }
 
       decode->mad_frame.options = decode->mp3_frame_options;
-      mad_synth_frame(&(decode->mad_synth), &(decode->mad_frame));
-      //mad_timer_add(&(decode->mad_timer), decode->mad_frame.header.duration);
 
+      // --- 16bit直書き出し最適化 ---
+#ifdef __OPT_X68K_16BIT_PCM_DIRECT__
+      // synth_full/half が書き出す先の作業用バッファを指定
+      // decodeハンドル内に 1152サンプル*2ch 分の short領域を確保している前提
+      decode->mad_synth.pcm_16bit = decode->resample_src_buffer; 
+#endif
+
+      mad_synth_frame(&(decode->mad_synth), &(decode->mad_frame));
       decode->current_mad_pcm = &(decode->mad_synth.pcm);
 
       if (decode->mp3_sample_rate < 0) {
         decode->mp3_sample_rate = decode->current_mad_pcm->samplerate;
         decode->mp3_channels = decode->current_mad_pcm->channels;
       }
-
     } 
 
     MAD_PCM* pcm = decode->current_mad_pcm;
-    if (resample_ofs * sizeof(int16_t) + ( pcm->length * 2 * pcm->channels ) > resample_buffer_bytes) {
-      // no more buffer space to write
+    // バッファ溢れチェック（ダウンサンプリング後なので実際はもっと余裕があるはずですが安全のため）
+    if (resample_ofs * sizeof(int16_t) + ( pcm->length * sizeof(int16_t) ) > resample_buffer_bytes) {
       break;
     }
 
+#ifdef __OPT_X68K_16BIT_PCM_DIRECT__
+    // --- 最適化された16bitソースからのダウンサンプリング ---
+    int16_t* src_pcm = decode->resample_src_buffer;
+
     if (pcm->channels == 2) {
-
       for (int32_t i = 0; i < pcm->length; i++) {
-
-        // down sampling
         decode->resample_counter += resample_freq;
-        if (decode->resample_counter < pcm->samplerate) {
-          continue;
-        }
+        if (decode->resample_counter < pcm->samplerate) continue;
 
-        // stereo to mono
+        // すでに16bit化されているので、読み取って平均・シフトするだけ
+        // (L + R) / 2 / 16  => ADPCM用12bitモノラル化
+        resample_buffer[ resample_ofs++ ] = ( src_pcm[i*2] + src_pcm[i*2+1] ) >> 5; 
+        decode->resample_counter -= pcm->samplerate;
+      }
+    } else {
+      for (int32_t i = 0; i < pcm->length; i++) {
+        decode->resample_counter += resample_freq;
+        if (decode->resample_counter < pcm->samplerate) continue;
+
+        // 単純に16bitから12bitへ
+        resample_buffer[ resample_ofs++ ] = src_pcm[i] >> 4;
+        decode->resample_counter -= pcm->samplerate;
+      }
+    }
+#else
+    // --- 従来の32bitソースからのダウンサンプリング ---
+    if (pcm->channels == 2) {
+      for (int32_t i = 0; i < pcm->length; i++) {
+        decode->resample_counter += resample_freq;
+        if (decode->resample_counter < pcm->samplerate) continue;
         resample_buffer[ resample_ofs++ ] = ( scale_16bit(pcm->samples[0][i]) + scale_16bit(pcm->samples[1][i]) ) / 2 / 16;
         decode->resample_counter -= pcm->samplerate;
-
       }
-
     } else {
-
       for (int32_t i = 0; i < pcm->length; i++) {
-
-        // down sampling
         decode->resample_counter += resample_freq;
-        if (decode->resample_counter < pcm->samplerate) {
-          continue;
-        }
-    
+        if (decode->resample_counter < pcm->samplerate) continue;
         resample_buffer[ resample_ofs++ ] = scale_12bit(pcm->samples[0][i]);
         decode->resample_counter -= pcm->samplerate;
-
       }
-
     }
+#endif
 
     decode->current_mad_pcm = NULL;
-
   }
 
-  // success
   rc = 0;
 
 exit:
-
-  // push resampled count
   *resampled_bytes = resample_ofs * sizeof(int16_t);
 
 #ifdef __VERBOSE__
