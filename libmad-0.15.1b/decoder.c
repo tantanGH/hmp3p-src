@@ -19,7 +19,9 @@
  * $Id: decoder.c,v 1.22 2004/01/23 09:41:32 rob Exp $
  */
 
+#ifdef __OPT_X68K_HIMEM__
 #include "../src/himem.h"
+#endif
 
 # ifdef HAVE_CONFIG_H
 #  include "config.h"
@@ -238,8 +240,11 @@ enum mad_flow receive(int fd, void **message, unsigned int *size)
 
     if (*size > 0) {
       if (*message == 0) {
-//	*message = malloc(*size);
+#ifdef __OPT_X68K_HIMEM__
   *message = himem_malloc(*size, 1);
+#else
+	*message = malloc(*size);
+#endif
 	if (*message == 0)
 	  return MAD_FLOW_BREAK;
       }
@@ -289,9 +294,11 @@ enum mad_flow check_message(struct mad_decoder *decoder)
   }
 
   if (message)
-    //free(message);
+#ifdef __OPT_X68K_HIMEM__
     himem_free(message, 1);
-
+#else
+    free(message);
+#endif
   return result;
 }
 # endif
@@ -554,8 +561,11 @@ int mad_decoder_run(struct mad_decoder *decoder, enum mad_decoder_mode mode)
   if (run == 0)
     return -1;
 
-//  decoder->sync = malloc(sizeof(*decoder->sync));
+#ifdef __OPT_X68K_HIMEM__
   decoder->sync = himem_malloc(sizeof(*decoder->sync), 1);
+#else
+  decoder->sync = malloc(sizeof(*decoder->sync));
+#endif
   if (decoder->sync == 0)
     return -1;
 

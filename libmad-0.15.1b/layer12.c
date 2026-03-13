@@ -19,6 +19,13 @@
  * $Id: layer12.c,v 1.17 2004/02/05 09:02:39 rob Exp $
  */
 
+#ifdef __OPT_X68K_FAST_LAYER_DECODE__
+#undef __OPT_X68K_FAST_LAYER_DECODE__
+#endif
+
+#pragma GCC push_options
+#pragma GCC optimize("Os")
+
 # ifdef HAVE_CONFIG_H
 #  include "config.h"
 # endif
@@ -532,3 +539,5 @@ int mad_layer_II(struct mad_stream *stream, struct mad_frame *frame)
 
   return 0;
 }
+
+#pragma GCC pop_options

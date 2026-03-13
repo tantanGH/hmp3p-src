@@ -19,6 +19,9 @@
  * $Id: timer.c,v 1.18 2004/01/23 09:41:33 rob Exp $
  */
 
+#pragma GCC push_options
+#pragma GCC optimize("Os")
+
 # ifdef HAVE_CONFIG_H
 #  include "config.h"
 # endif
@@ -484,3 +487,5 @@ void mad_timer_string(mad_timer_t timer,
     break;
   }
 }
+
+#pragma GCC pop_options

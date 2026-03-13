@@ -339,7 +339,9 @@ loop:
 
   // current chain table entries
   CHAIN_TABLE* cur_chain_table = NULL;
+  size_t chain_table_buffer_bytes = CHAIN_TABLE_BUFFER_BYTES;   // no need to adjust because of fixed resampling rate
   CHAIN_TABLE_EX* cur_chain_table_ex = NULL;
+  size_t chain_table_ex_buffer_bytes = CHAIN_TABLE_EX_BUFFER_BYTES / (mp3_quality + 1);
 
   // file read buffers
   void* fread_buffer = NULL;
@@ -483,7 +485,7 @@ try:
       memset(ct, 0, sizeof(CHAIN_TABLE));
 
       // allocate pcm data buffer for this chain table entry
-      ct->buffer = himem_malloc(CHAIN_TABLE_BUFFER_BYTES, use_high_memory);
+      ct->buffer = himem_malloc(chain_table_buffer_bytes, use_high_memory);
       if (ct->buffer == NULL) {
         strcpy(error_mes, cp932rsc_himem_shortage);
         goto catch;
@@ -491,7 +493,7 @@ try:
 
       // decode mp3 stream into pcm data buffer as much as possible with resampling
       size_t decoded_bytes;
-      if (mp3_decode_resample(&mp3_decoder, ct->buffer, CHAIN_TABLE_BUFFER_BYTES, 15625, &decoded_bytes) != 0) {
+      if (mp3_decode_resample(&mp3_decoder, ct->buffer, chain_table_buffer_bytes, 15625, &decoded_bytes) != 0) {
         strcpy(error_mes, cp932rsc_mp3_decode_error);
         goto catch;      
       }
@@ -537,7 +539,7 @@ try:
       memset(ct, 0, sizeof(CHAIN_TABLE_EX));
 
       // allocate pcm data buffer for this chain table entry
-      ct->buffer = himem_malloc(CHAIN_TABLE_EX_BUFFER_BYTES, use_high_memory);
+      ct->buffer = himem_malloc(chain_table_ex_buffer_bytes, use_high_memory);
       if (ct->buffer == NULL) {
         strcpy(error_mes, cp932rsc_himem_shortage);
         goto catch;
@@ -545,7 +547,7 @@ try:
 
       // decode mp3 stream into pcm data buffer as much as possible
       size_t decoded_bytes;
-      if (mp3_decode_full(&mp3_decoder, ct->buffer, CHAIN_TABLE_EX_BUFFER_BYTES, &decoded_bytes) != 0) {
+      if (mp3_decode_full(&mp3_decoder, ct->buffer, chain_table_ex_buffer_bytes, &decoded_bytes) != 0) {
         strcpy(error_mes, cp932rsc_mp3_decode_error);
         goto catch;      
       }
@@ -706,7 +708,7 @@ try:
         memset(ct, 0, sizeof(CHAIN_TABLE));
 
         // allocate pcm buffer for this chain table entry
-        ct->buffer = himem_malloc(CHAIN_TABLE_BUFFER_BYTES, use_high_memory);
+        ct->buffer = himem_malloc(chain_table_buffer_bytes, use_high_memory);
         if (ct->buffer == NULL) {
           strcpy(error_mes, cp932rsc_himem_shortage);
           goto catch;
@@ -714,7 +716,7 @@ try:
 
         // decode mp3 stream into pcm buffer
         size_t decoded_bytes;
-        if (mp3_decode_resample(&mp3_decoder, ct->buffer, CHAIN_TABLE_BUFFER_BYTES, 15625, &decoded_bytes) != 0) {
+        if (mp3_decode_resample(&mp3_decoder, ct->buffer, chain_table_buffer_bytes, 15625, &decoded_bytes) != 0) {
           strcpy(error_mes, cp932rsc_mp3_decode_error);
           goto catch;      
         }
@@ -784,7 +786,7 @@ try:
         memset(ct, 0, sizeof(CHAIN_TABLE_EX));
 
         // allocate pcm buffer for this chain table entry
-        ct->buffer = himem_malloc(CHAIN_TABLE_EX_BUFFER_BYTES, use_high_memory);
+        ct->buffer = himem_malloc(chain_table_ex_buffer_bytes, use_high_memory);
         if (ct->buffer == NULL) {
           strcpy(error_mes, cp932rsc_himem_shortage);
           goto catch;
@@ -792,7 +794,7 @@ try:
 
         // decode mp3 stream into pcm buffer
         size_t decoded_bytes;
-        if (mp3_decode_full(&mp3_decoder, ct->buffer, CHAIN_TABLE_EX_BUFFER_BYTES, &decoded_bytes) != 0) {
+        if (mp3_decode_full(&mp3_decoder, ct->buffer, chain_table_ex_buffer_bytes, &decoded_bytes) != 0) {
           strcpy(error_mes, cp932rsc_mp3_decode_error);
           goto catch;      
         }
@@ -926,9 +928,6 @@ exit:
 
   // resume pcm8pp settings
   if (pcm8pp_isavailable()) {
-#ifdef __VERBOSE__
-    printf("g_original_pcm8pp_max_channels = %d\n", g_original_pcm8pp_max_channels);
-#endif
     if (g_original_pcm8pp_frequency_mode > 0) pcm8pp_set_frequency_mode(g_original_pcm8pp_frequency_mode);
     if (g_original_pcm8pp_max_channels > 0) pcm8pp_set_max_channels(g_original_pcm8pp_max_channels);
   }

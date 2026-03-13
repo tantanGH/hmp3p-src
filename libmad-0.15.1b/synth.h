@@ -40,9 +40,10 @@ struct mad_synth {
 
   unsigned int phase;			/* current processing phase */
 
-#ifdef __OPT_X68K_INTERLEAVED_16BIT_DIRECT__
-  short* pcm_16bit;       /* 16bit interleaved PCM output */
-#endif  
+#ifdef __OPT_X68K_16BIT_PCM_DIRECT__
+  short* pcm_16bit;
+#endif
+
   struct mad_pcm pcm;			/* PCM output */
 };
 

@@ -28,26 +28,28 @@ TARGET_FILE = HMP3P060.X
 DOCUMENT_FILE = HMP3P.DOC
 
 # Distribution package 
-PACKAGE_FILE = ../HMP3P070.ZIP
+PACKAGE_FILE = ../HMP3P080.ZIP
 
 # ヘッダ検索パス
 INCLUDE_FLAGS = -I${XDEV68K_DIR}/include/xc -I${XDEV68K_DIR}/include/xdev68k -I${LIBMAD_DIR}
 
 # コンパイルフラグ
-COMMON_FLAGS = -m68060 -msoft-float -O3 -fomit-frame-pointer \
-		-finline-functions -finline-limit=10000 \
-    	-funroll-loops -fpeel-loops \
-    	-falign-functions=16 -falign-loops=16 \
-    	-fno-builtin -mno-strict-align \
-		${INCLUDE_FLAGS}
-_COMMON_FLAGS = -m68060 -msoft-float -O3 -fomit-frame-pointer \
-		-fno-builtin \
-		${INCLUDE_FLAGS}
-
+_COMMON_FLAGS = -m68060 -msoft-float -mstrict-align -O3 \
+    -fomit-frame-pointer -fstrict-aliasing \
+    -finline-functions -finline-limit=10000 \
+    -falign-functions=16 -falign-loops=16 \
+    -fno-unroll-loops -fno-peel-loops -fno-builtin \
+    ${INCLUDE_FLAGS}
+COMMON_FLAGS = -m68060 -msoft-float -Os \
+    -fomit-frame-pointer -fstrict-aliasing \
+    -finline-functions -finline-limit=10000 \
+    -falign-functions=16 \
+    -fno-unroll-loops -fno-peel-loops -fno-builtin \
+    ${INCLUDE_FLAGS}
 
 CFLAGS = $(COMMON_FLAGS) -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall-used-a2 \
-    -fexec-charset=cp932 -fverbose-asm -fno-defer-pop \
-	-D__NO_VERBOSE__ -D__NO_VERBOSE2__ -D__NO_VERBOSE3__ -D__NO_OPT_X68K_INLINE_MACRO_SCALE__ -D__NO_OPT_X68K_INTERLEAVED_16BIT_DIRECT__
+    -fexec-charset=cp932 -fverbose-asm \
+	-D__NO_VERBOSE__ -D__NO_VERBOSE2__ -D__NO_VERBOSE3__ -D__OPT_X68K_16BIT_PCM_DIRECT__
 
 # *.c ソースファイル
 C_SRCS = himem.c crtc.c pcm8a.c pcm8pp.c mp3_decode.c picojpeg.c jpeg_decode.c main.c
@@ -65,6 +67,8 @@ LIBS =\
 	${XDEV68K_DIR}/lib/xc/IOCSLIB.L \
 	${XDEV68K_DIR}/lib/xc/FLOATFNC.L \
 	${XDEV68K_DIR}/lib/m68k_elf/m68000/libgcc.a
+
+#	${XDEV68K_DIR}/lib/m68k_elf/m68060/libgcc.a
 
 # 中間ファイル生成用ディレクトリ
 INTERMEDIATE_DIR = _build060
