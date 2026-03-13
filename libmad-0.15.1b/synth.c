@@ -29,48 +29,6 @@
 # include "frame.h"
 # include "synth.h"
 
-#ifdef __OPT_X68K_16BIT_PCM_DIRECT__
-//
-//  inline helper: 24bit signed int to 16bit signed int
-//
-static inline int16_t __attribute__((hot)) scale_16bit(mad_fixed_t sample) {
-
-  // round
-  sample += (1L << (MAD_F_FRACBITS - 16));
-
-  // clip
-  if (sample >= MAD_F_ONE) {
-    sample = MAD_F_ONE - 1;
-  }
-  if (sample < -MAD_F_ONE) {
-    sample = -MAD_F_ONE;
-  }
-
-  // quantize
-  return sample >> (MAD_F_FRACBITS + 1 - 16);
-}
-
-//
-//  inline helper: 24bit signed int to 12bit signed int
-//
-static inline int16_t scale_12bit(mad_fixed_t sample) {
-
-  // round
-  sample += (1L << (MAD_F_FRACBITS - 12));
-
-  // clip
-  if (sample >= MAD_F_ONE) {
-    sample = MAD_F_ONE - 1;
-  }
-  if (sample < -MAD_F_ONE) {
-    sample = -MAD_F_ONE;
-  }
-
-  // quantize
-  return sample >> (MAD_F_FRACBITS + 1 - 12);
-}
-#endif
-
 /*
  * NAME:	synth->init()
  * DESCRIPTION:	initialize synth struct
@@ -162,7 +120,7 @@ void mad_synth_mute(struct mad_synth *synth)
  * DESCRIPTION:	perform fast in[32]->out[32] DCT
  */
 static
-void __attribute__((hot)) dct32(mad_fixed_t const in[32], unsigned int slot,
+void __attribute__((noinline,hot)) dct32(mad_fixed_t const in[32], unsigned int slot,
 	   mad_fixed_t lo[16][8], mad_fixed_t hi[16][8])
 {
   mad_fixed_t t0,   t1,   t2,   t3,   t4,   t5,   t6,   t7;
@@ -592,7 +550,29 @@ mad_fixed_t const D[17][32] __attribute__((aligned(16))) = {
 void synth_full(struct mad_synth *, struct mad_frame const *,
 		unsigned int, unsigned int);
 
+#undef SHIFT
+#define SHIFT(x)  (x)
+
 #elif __OPT_X68K_16BIT_PCM_DIRECT__
+
+//
+//  inline helper: 24bit signed int to 16bit signed int
+//
+static inline int16_t __attribute__((hot)) scale_16bit(mad_fixed_t sample) {
+
+  // round
+  sample += (1L << (MAD_F_FRACBITS - 16));
+
+  // clip
+  if (sample >= MAD_F_ONE) {
+    sample = MAD_F_ONE - 1;
+  } else if (sample < -MAD_F_ONE) {
+    sample = -MAD_F_ONE;
+  }
+
+  // quantize
+  return sample >> (MAD_F_FRACBITS + 1 - 16);
+}
 
 /*
  * NAME:	synth->full()
@@ -1172,6 +1152,8 @@ void synth_half(struct mad_synth *synth, struct mad_frame const *frame,
 
 #endif
 
+#ifdef __OPT_X68K_SYNTH_QUARTER__
+
 /*
  * NAME:	synth->quarter()
  * DESCRIPTION:	perform quarter frequency PCM synthesis
@@ -1310,6 +1292,8 @@ void synth_quarter(struct mad_synth *synth, struct mad_frame const *frame,
   }
 }
 
+#endif
+
 /*
  * NAME:	synth->frame()
  * DESCRIPTION:	perform PCM synthesis of frame subband samples
@@ -1334,11 +1318,14 @@ void mad_synth_frame(struct mad_synth *synth, struct mad_frame const *frame)
     synth->pcm.length     /= 2;
 
     synth_frame = synth_half;
+
+#ifdef __OPT_X68K_SYNTH_QUARTER__
   } else if (frame->options & MAD_OPTION_QUARTERSAMPLERATE) {
     synth->pcm.samplerate /= 4;
     synth->pcm.length     /= 4;
 
     synth_frame = synth_quarter;
+#endif
   }
 
   synth_frame(synth, frame, nch, ns);

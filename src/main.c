@@ -137,45 +137,6 @@ exit:
   return mpu_type;
 }
 
-#ifdef __mc68060__
-//
-//  cache mode
-//    0 ... cache on, write through
-//    1 ... cache on, copy back
-//    2 ... cache off, store buffer off
-//    3 ... cache off, store buffer on
-//
-static int32_t set_page_cache_mode(void* addr, int32_t mode) {
-
-  struct REGS in_regs = { 0 };
-  struct REGS out_regs = { 0 };
-
-  in_regs.d0 = 0xac;      // IOCS _SYS_STAT
-  in_regs.d1 = 0x8004;    // set cache mode
-  in_regs.d2 = mode;
-  in_regs.a1 = (uint32_t)addr;
-
-  TRAP15(&in_regs, &out_regs);
-
-  return out_regs.d0;
-}
-
-void set_buffer_cache_mode(void* buffer, size_t size, int32_t mode) {
-
-  // 4KBのマスク（4096 - 1 = 0xFFF）
-  uintptr_t start_addr = (uintptr_t)buffer;
-  uintptr_t end_addr = start_addr + size;
-    
-  // 4KB単位の境界まで切り下げたアドレスから開始
-  uintptr_t page_start = start_addr & ~(4096 - 1);
-    
-  // 設定が必要なページ分だけループ
-  for (uintptr_t p = page_start; p < end_addr; p += 4096) {
-    set_page_cache_mode((void*)p, mode);
-  }
-}
-#endif
-
 //
 //  show help message
 //
@@ -378,7 +339,9 @@ loop:
 
   // current chain table entries
   CHAIN_TABLE* cur_chain_table = NULL;
+  size_t chain_table_buffer_bytes = CHAIN_TABLE_BUFFER_BYTES;   // no need to adjust because of fixed resampling rate
   CHAIN_TABLE_EX* cur_chain_table_ex = NULL;
+  size_t chain_table_ex_buffer_bytes = CHAIN_TABLE_EX_BUFFER_BYTES / (mp3_quality + 1);
 
   // file read buffers
   void* fread_buffer = NULL;
@@ -432,9 +395,6 @@ try:
     strcpy(error_mes, cp932rsc_himem_shortage);
     goto catch;
   }
-#ifdef __OPT_X68K_PAGE_CACHE_CONTROL__
-  set_buffer_cache_mode(fread_buffer,fread_buffer_len,1);
-#endif
 
   // read whole mp3 file content into high memory
   if (staging_file_read) {
@@ -525,7 +485,7 @@ try:
       memset(ct, 0, sizeof(CHAIN_TABLE));
 
       // allocate pcm data buffer for this chain table entry
-      ct->buffer = himem_malloc(CHAIN_TABLE_BUFFER_BYTES, use_high_memory);
+      ct->buffer = himem_malloc(chain_table_buffer_bytes, use_high_memory);
       if (ct->buffer == NULL) {
         strcpy(error_mes, cp932rsc_himem_shortage);
         goto catch;
@@ -533,7 +493,7 @@ try:
 
       // decode mp3 stream into pcm data buffer as much as possible with resampling
       size_t decoded_bytes;
-      if (mp3_decode_resample(&mp3_decoder, ct->buffer, CHAIN_TABLE_BUFFER_BYTES, 15625, &decoded_bytes) != 0) {
+      if (mp3_decode_resample(&mp3_decoder, ct->buffer, chain_table_buffer_bytes, 15625, &decoded_bytes) != 0) {
         strcpy(error_mes, cp932rsc_mp3_decode_error);
         goto catch;      
       }
@@ -579,18 +539,15 @@ try:
       memset(ct, 0, sizeof(CHAIN_TABLE_EX));
 
       // allocate pcm data buffer for this chain table entry
-      ct->buffer = himem_malloc(CHAIN_TABLE_EX_BUFFER_BYTES, use_high_memory);
+      ct->buffer = himem_malloc(chain_table_ex_buffer_bytes, use_high_memory);
       if (ct->buffer == NULL) {
         strcpy(error_mes, cp932rsc_himem_shortage);
         goto catch;
       }
-#ifdef __OPT_X68K_PAGE_CACHE_CONTROL__
-      set_buffer_cache_mode(ct->buffer,CHAIN_TABLE_EX_BUFFER_BYTES,0);
-#endif
 
       // decode mp3 stream into pcm data buffer as much as possible
       size_t decoded_bytes;
-      if (mp3_decode_full(&mp3_decoder, ct->buffer, CHAIN_TABLE_EX_BUFFER_BYTES, &decoded_bytes) != 0) {
+      if (mp3_decode_full(&mp3_decoder, ct->buffer, chain_table_ex_buffer_bytes, &decoded_bytes) != 0) {
         strcpy(error_mes, cp932rsc_mp3_decode_error);
         goto catch;      
       }
@@ -751,7 +708,7 @@ try:
         memset(ct, 0, sizeof(CHAIN_TABLE));
 
         // allocate pcm buffer for this chain table entry
-        ct->buffer = himem_malloc(CHAIN_TABLE_BUFFER_BYTES, use_high_memory);
+        ct->buffer = himem_malloc(chain_table_buffer_bytes, use_high_memory);
         if (ct->buffer == NULL) {
           strcpy(error_mes, cp932rsc_himem_shortage);
           goto catch;
@@ -759,7 +716,7 @@ try:
 
         // decode mp3 stream into pcm buffer
         size_t decoded_bytes;
-        if (mp3_decode_resample(&mp3_decoder, ct->buffer, CHAIN_TABLE_BUFFER_BYTES, 15625, &decoded_bytes) != 0) {
+        if (mp3_decode_resample(&mp3_decoder, ct->buffer, chain_table_buffer_bytes, 15625, &decoded_bytes) != 0) {
           strcpy(error_mes, cp932rsc_mp3_decode_error);
           goto catch;      
         }
@@ -829,18 +786,15 @@ try:
         memset(ct, 0, sizeof(CHAIN_TABLE_EX));
 
         // allocate pcm buffer for this chain table entry
-        ct->buffer = himem_malloc(CHAIN_TABLE_EX_BUFFER_BYTES, use_high_memory);
+        ct->buffer = himem_malloc(chain_table_ex_buffer_bytes, use_high_memory);
         if (ct->buffer == NULL) {
           strcpy(error_mes, cp932rsc_himem_shortage);
           goto catch;
         }
-#ifdef __OPT_X68K_PAGE_CACHE_CONTROL__
-      set_buffer_cache_mode(ct->buffer,CHAIN_TABLE_EX_BUFFER_BYTES,0);
-#endif
 
         // decode mp3 stream into pcm buffer
         size_t decoded_bytes;
-        if (mp3_decode_full(&mp3_decoder, ct->buffer, CHAIN_TABLE_EX_BUFFER_BYTES, &decoded_bytes) != 0) {
+        if (mp3_decode_full(&mp3_decoder, ct->buffer, chain_table_ex_buffer_bytes, &decoded_bytes) != 0) {
           strcpy(error_mes, cp932rsc_mp3_decode_error);
           goto catch;      
         }

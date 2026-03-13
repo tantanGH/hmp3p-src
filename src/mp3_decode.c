@@ -347,6 +347,9 @@ exit:
   return rc;
 }
 
+//#pragma GCC push_options
+//#pragma GCC optimize("O3")
+
 //
 //  decode MP3 stream
 //
@@ -401,7 +404,7 @@ int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_
 
       // バッファオーバーフローの事前チェック
       // Layer IIIなら最大1152サンプル * 2ch = 2304 samples 分の空きが必要
-      if ((decode_ofs + 2304) * sizeof(int16_t) > decode_buffer_bytes) {
+      if ((decode_ofs + MAD_MAX_SAMPLES * 2) * sizeof(int16_t) > decode_buffer_bytes) {
           break; 
       }
 #endif
@@ -588,3 +591,5 @@ exit:
 
   return rc;
 }
+
+//#pragma GCC pop_options

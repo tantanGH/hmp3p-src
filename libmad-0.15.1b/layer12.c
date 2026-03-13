@@ -23,6 +23,9 @@
 #undef __OPT_X68K_FAST_LAYER_DECODE__
 #endif
 
+#pragma GCC push_options
+#pragma GCC optimize("Os")
+
 # ifdef HAVE_CONFIG_H
 #  include "config.h"
 # endif
@@ -536,3 +539,5 @@ int mad_layer_II(struct mad_stream *stream, struct mad_frame *frame)
 
   return 0;
 }
+
+#pragma GCC pop_options

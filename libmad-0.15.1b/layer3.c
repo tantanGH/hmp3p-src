@@ -183,7 +183,7 @@ static
 struct {
   unsigned char slen1;
   unsigned char slen2;
-} const sflen_table[16] = {
+} const sflen_table[16] __attribute__((aligned(16))) = {
   { 0, 0 }, { 0, 1 }, { 0, 2 }, { 0, 3 },
   { 3, 0 }, { 1, 1 }, { 1, 2 }, { 1, 3 },
   { 2, 1 }, { 2, 2 }, { 2, 3 }, { 3, 1 },
@@ -195,7 +195,7 @@ struct {
  * derived from section 2.4.3.2 of ISO/IEC 13818-3
  */
 static
-unsigned char const nsfb_table[6][3][4] = {
+unsigned char const nsfb_table[6][3][4] __attribute__((aligned(16))) = {
   { {  6,  5,  5, 5 },
     {  9,  9,  9, 9 },
     {  6,  9,  9, 9 } },
@@ -226,46 +226,46 @@ unsigned char const nsfb_table[6][3][4] = {
  * derived from Table B.8 of ISO/IEC 11172-3
  */
 static
-unsigned char const sfb_48000_long[] = {
+unsigned char const sfb_48000_long[] __attribute__((aligned(16))) = {
    4,  4,  4,  4,  4,  4,  6,  6,  6,   8,  10,
   12, 16, 18, 22, 28, 34, 40, 46, 54,  54, 192
 };
 
 static
-unsigned char const sfb_44100_long[] = {
+unsigned char const sfb_44100_long[] __attribute__((aligned(16))) = {
    4,  4,  4,  4,  4,  4,  6,  6,  8,   8,  10,
   12, 16, 20, 24, 28, 34, 42, 50, 54,  76, 158
 };
 
 static
-unsigned char const sfb_32000_long[] = {
+unsigned char const sfb_32000_long[] __attribute__((aligned(16))) = {
    4,  4,  4,  4,  4,  4,  6,  6,  8,  10,  12,
   16, 20, 24, 30, 38, 46, 56, 68, 84, 102,  26
 };
 
 static
-unsigned char const sfb_48000_short[] = {
+unsigned char const sfb_48000_short[] __attribute__((aligned(16))) = {
    4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  6,
    6,  6,  6,  6,  6, 10, 10, 10, 12, 12, 12, 14, 14,
   14, 16, 16, 16, 20, 20, 20, 26, 26, 26, 66, 66, 66
 };
 
 static
-unsigned char const sfb_44100_short[] = {
+unsigned char const sfb_44100_short[] __attribute__((aligned(16))) = {
    4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  6,
    6,  6,  8,  8,  8, 10, 10, 10, 12, 12, 12, 14, 14,
   14, 18, 18, 18, 22, 22, 22, 30, 30, 30, 56, 56, 56
 };
 
 static
-unsigned char const sfb_32000_short[] = {
+unsigned char const sfb_32000_short[] __attribute__((aligned(16))) = {
    4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  6,
    6,  6,  8,  8,  8, 12, 12, 12, 16, 16, 16, 20, 20,
   20, 26, 26, 26, 34, 34, 34, 42, 42, 42, 12, 12, 12
 };
 
 static
-unsigned char const sfb_48000_mixed[] = {
+unsigned char const sfb_48000_mixed[] __attribute__((aligned(16))) = {
   /* long */   4,  4,  4,  4,  4,  4,  6,  6,
   /* short */  4,  4,  4,  6,  6,  6,  6,  6,  6, 10,
               10, 10, 12, 12, 12, 14, 14, 14, 16, 16,
@@ -273,7 +273,7 @@ unsigned char const sfb_48000_mixed[] = {
 };
 
 static
-unsigned char const sfb_44100_mixed[] = {
+unsigned char const sfb_44100_mixed[] __attribute__((aligned(16))) = {
   /* long */   4,  4,  4,  4,  4,  4,  6,  6,
   /* short */  4,  4,  4,  6,  6,  6,  8,  8,  8, 10,
               10, 10, 12, 12, 12, 14, 14, 14, 18, 18,
@@ -281,7 +281,7 @@ unsigned char const sfb_44100_mixed[] = {
 };
 
 static
-unsigned char const sfb_32000_mixed[] = {
+unsigned char const sfb_32000_mixed[] __attribute__((aligned(16))) = {
   /* long */   4,  4,  4,  4,  4,  4,  6,  6,
   /* short */  4,  4,  4,  6,  6,  6,  8,  8,  8, 12,
               12, 12, 16, 16, 16, 20, 20, 20, 26, 26,
@@ -293,13 +293,13 @@ unsigned char const sfb_32000_mixed[] = {
  * derived from Table B.2 of ISO/IEC 13818-3
  */
 static
-unsigned char const sfb_24000_long[] = {
+unsigned char const sfb_24000_long[] __attribute__((aligned(16))) = {
    6,  6,  6,  6,  6,  6,  8, 10, 12,  14,  16,
   18, 22, 26, 32, 38, 46, 54, 62, 70,  76,  36
 };
 
 static
-unsigned char const sfb_22050_long[] = {
+unsigned char const sfb_22050_long[] __attribute__((aligned(16))) = {
    6,  6,  6,  6,  6,  6,  8, 10, 12,  14,  16,
   20, 24, 28, 32, 38, 46, 52, 60, 68,  58,  54
 };
@@ -307,28 +307,28 @@ unsigned char const sfb_22050_long[] = {
 # define sfb_16000_long  sfb_22050_long
 
 static
-unsigned char const sfb_24000_short[] = {
+unsigned char const sfb_24000_short[] __attribute__((aligned(16))) = {
    4,  4,  4,  4,  4,  4,  4,  4,  4,  6,  6,  6,  8,
    8,  8, 10, 10, 10, 12, 12, 12, 14, 14, 14, 18, 18,
   18, 24, 24, 24, 32, 32, 32, 44, 44, 44, 12, 12, 12
 };
 
 static
-unsigned char const sfb_22050_short[] = {
+unsigned char const sfb_22050_short[] __attribute__((aligned(16))) = {
    4,  4,  4,  4,  4,  4,  4,  4,  4,  6,  6,  6,  6,
    6,  6,  8,  8,  8, 10, 10, 10, 14, 14, 14, 18, 18,
   18, 26, 26, 26, 32, 32, 32, 42, 42, 42, 18, 18, 18
 };
 
 static
-unsigned char const sfb_16000_short[] = {
+unsigned char const sfb_16000_short[] __attribute__((aligned(16))) = {
    4,  4,  4,  4,  4,  4,  4,  4,  4,  6,  6,  6,  8,
    8,  8, 10, 10, 10, 12, 12, 12, 14, 14, 14, 18, 18,
   18, 24, 24, 24, 30, 30, 30, 40, 40, 40, 18, 18, 18
 };
 
 static
-unsigned char const sfb_24000_mixed[] = {
+unsigned char const sfb_24000_mixed[] __attribute__((aligned(16))) = {
   /* long */   6,  6,  6,  6,  6,  6,
   /* short */  6,  6,  6,  8,  8,  8, 10, 10, 10, 12,
               12, 12, 14, 14, 14, 18, 18, 18, 24, 24,
@@ -336,7 +336,7 @@ unsigned char const sfb_24000_mixed[] = {
 };
 
 static
-unsigned char const sfb_22050_mixed[] = {
+unsigned char const sfb_22050_mixed[] __attribute__((aligned(16))) = {
   /* long */   6,  6,  6,  6,  6,  6,
   /* short */  6,  6,  6,  6,  6,  6,  8,  8,  8, 10,
               10, 10, 14, 14, 14, 18, 18, 18, 26, 26,
@@ -344,7 +344,7 @@ unsigned char const sfb_22050_mixed[] = {
 };
 
 static
-unsigned char const sfb_16000_mixed[] = {
+unsigned char const sfb_16000_mixed[] __attribute__((aligned(16))) = {
   /* long */   6,  6,  6,  6,  6,  6,
   /* short */  6,  6,  6,  8,  8,  8, 10, 10, 10, 12,
               12, 12, 14, 14, 14, 18, 18, 18, 24, 24,
@@ -359,7 +359,7 @@ unsigned char const sfb_16000_mixed[] = {
 # define sfb_11025_long  sfb_12000_long
 
 static
-unsigned char const sfb_8000_long[] = {
+unsigned char const sfb_8000_long[] __attribute__((aligned(16))) = {
   12, 12, 12, 12, 12, 12, 16, 20, 24,  28,  32,
   40, 48, 56, 64, 76, 90,  2,  2,  2,   2,   2
 };
@@ -368,7 +368,7 @@ unsigned char const sfb_8000_long[] = {
 # define sfb_11025_short  sfb_12000_short
 
 static
-unsigned char const sfb_8000_short[] = {
+unsigned char const sfb_8000_short[] __attribute__((aligned(16))) = {
    8,  8,  8,  8,  8,  8,  8,  8,  8, 12, 12, 12, 16,
   16, 16, 20, 20, 20, 24, 24, 24, 28, 28, 28, 36, 36,
   36,  2,  2,  2,  2,  2,  2,  2,  2,  2, 26, 26, 26
@@ -380,7 +380,7 @@ unsigned char const sfb_8000_short[] = {
 /* the 8000 Hz short block scalefactor bands do not break after
    the first 36 frequency lines, so this is probably wrong */
 static
-unsigned char const sfb_8000_mixed[] = {
+unsigned char const sfb_8000_mixed[] __attribute__((aligned(16))) = {
   /* long */  12, 12, 12,
   /* short */  4,  4,  4,  8,  8,  8, 12, 12, 12, 16, 16, 16,
               20, 20, 20, 24, 24, 24, 28, 28, 28, 36, 36, 36,
@@ -392,7 +392,7 @@ struct {
   unsigned char const *l;
   unsigned char const *s;
   unsigned char const *m;
-} const sfbwidth_table[9] = {
+} const sfbwidth_table[9] __attribute__((aligned(16))) = {
   { sfb_48000_long, sfb_48000_short, sfb_48000_mixed },
   { sfb_44100_long, sfb_44100_short, sfb_44100_mixed },
   { sfb_32000_long, sfb_32000_short, sfb_32000_mixed },
@@ -409,7 +409,7 @@ struct {
  * derived from Table B.6 of ISO/IEC 11172-3
  */
 static
-unsigned char const pretab[22] = {
+unsigned char const pretab[22] __attribute__((aligned(16))) = {
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 3, 3, 3, 2, 0
 };
 
@@ -422,7 +422,7 @@ static
 struct fixedfloat {
   unsigned long mantissa  : 27;
   unsigned short exponent :  5;
-} const rq_table[8207] = {
+} const rq_table[8207] __attribute__((aligned(16))) = {
 # include "rq_table.dat"
 };
 
@@ -433,7 +433,7 @@ struct fixedfloat {
  * root_table[3 + x] = 2^(x/4)
  */
 static
-mad_fixed_t const root_table[7] = {
+mad_fixed_t const root_table[7] __attribute__((aligned(16))) = {
   MAD_F(0x09837f05) /* 2^(-3/4) == 0.59460355750136 */,
   MAD_F(0x0b504f33) /* 2^(-2/4) == 0.70710678118655 */,
   MAD_F(0x0d744fcd) /* 2^(-1/4) == 0.84089641525371 */,
@@ -452,7 +452,7 @@ mad_fixed_t const root_table[7] = {
  * ca[i] = c[i] / sqrt(1 + c[i]^2)
  */
 static
-mad_fixed_t const cs[8] = {
+mad_fixed_t const cs[8] __attribute__((aligned(16))) = {
   +MAD_F(0x0db84a81) /* +0.857492926 */, +MAD_F(0x0e1b9d7f) /* +0.881741997 */,
   +MAD_F(0x0f31adcf) /* +0.949628649 */, +MAD_F(0x0fbba815) /* +0.983314592 */,
   +MAD_F(0x0feda417) /* +0.995517816 */, +MAD_F(0x0ffc8fc8) /* +0.999160558 */,
@@ -460,7 +460,7 @@ mad_fixed_t const cs[8] = {
 };
 
 static
-mad_fixed_t const ca[8] = {
+mad_fixed_t const ca[8] __attribute__((aligned(16))) = {
   -MAD_F(0x083b5fe7) /* -0.514495755 */, -MAD_F(0x078c36d2) /* -0.471731969 */,
   -MAD_F(0x05039814) /* -0.313377454 */, -MAD_F(0x02e91dd1) /* -0.181913200 */,
   -MAD_F(0x0183603a) /* -0.094574193 */, -MAD_F(0x00a7cb87) /* -0.040965583 */,
@@ -475,7 +475,7 @@ mad_fixed_t const ca[8] = {
  * imdct_s[i /odd][k] = cos((PI / 24) * (2 * (6 + (i-1)/2) + 7) * (2 * k + 1))
  */
 static
-mad_fixed_t const imdct_s[6][6] = {
+mad_fixed_t const imdct_s[6][6] __attribute__((aligned(16))) = {
 # include "imdct_s.dat"
 };
 
@@ -487,7 +487,7 @@ mad_fixed_t const imdct_s[6][6] = {
  * window_l[i] = sin((PI / 36) * (i + 1/2))
  */
 static
-mad_fixed_t const window_l[36] = {
+mad_fixed_t const window_l[36] __attribute__((aligned(16))) = {
   MAD_F(0x00b2aa3e) /* 0.043619387 */, MAD_F(0x0216a2a2) /* 0.130526192 */,
   MAD_F(0x03768962) /* 0.216439614 */, MAD_F(0x04cfb0e2) /* 0.300705800 */,
   MAD_F(0x061f78aa) /* 0.382683432 */, MAD_F(0x07635284) /* 0.461748613 */,
@@ -518,7 +518,7 @@ mad_fixed_t const window_l[36] = {
  * window_s[i] = sin((PI / 12) * (i + 1/2))
  */
 static
-mad_fixed_t const window_s[12] = {
+mad_fixed_t const window_s[12] __attribute__((aligned(16))) = {
   MAD_F(0x0216a2a2) /* 0.130526192 */, MAD_F(0x061f78aa) /* 0.382683432 */,
   MAD_F(0x09bd7ca0) /* 0.608761429 */, MAD_F(0x0cb19346) /* 0.793353340 */,
   MAD_F(0x0ec835e8) /* 0.923879533 */, MAD_F(0x0fdcf549) /* 0.991444861 */,
@@ -535,7 +535,7 @@ mad_fixed_t const window_s[12] = {
  * is_table[i] = is_ratio[i] / (1 + is_ratio[i])
  */
 static
-mad_fixed_t const is_table[7] = {
+mad_fixed_t const is_table[7] __attribute__((aligned(16))) = {
   MAD_F(0x00000000) /* 0.000000000 */,
   MAD_F(0x0361962f) /* 0.211324865 */,
   MAD_F(0x05db3d74) /* 0.366025404 */,
@@ -553,7 +553,7 @@ mad_fixed_t const is_table[7] = {
  * is_lsf_table[1][i] = (1 /      sqrt(2)) ^(i + 1)
  */
 static
-mad_fixed_t const is_lsf_table[2][15] = {
+mad_fixed_t const is_lsf_table[2][15] __attribute__((aligned(16))) = {
   {
     MAD_F(0x0d744fcd) /* 0.840896415 */,
     MAD_F(0x0b504f33) /* 0.707106781 */,
@@ -684,7 +684,7 @@ enum mad_error III_sideinfo(struct mad_bitptr *ptr, unsigned int nch,
  * NAME:	III_scalefactors_lsf()
  * DESCRIPTION:	decode channel scalefactors for LSF from a bitstream
  */
-static
+static __attribute__((noinline))
 unsigned int III_scalefactors_lsf(struct mad_bitptr *ptr,
 				  struct channel *channel,
 				  struct channel *gr1ch, int mode_extension)
@@ -799,7 +799,7 @@ unsigned int III_scalefactors_lsf(struct mad_bitptr *ptr,
  * NAME:	III_scalefactors()
  * DESCRIPTION:	decode channel scalefactors of one granule from a bitstream
  */
-static
+static __attribute__((noinline))
 unsigned int III_scalefactors(struct mad_bitptr *ptr, struct channel *channel,
 			      struct channel const *gr0ch, unsigned int scfsi)
 {
@@ -1665,7 +1665,7 @@ void III_aliasreduce(mad_fixed_t xr[576], int lines)
 void III_imdct_l(mad_fixed_t const [18], mad_fixed_t [36], unsigned int);
 # else
 #  if 1
-static
+static inline
 void fastsdct(mad_fixed_t const x[9], mad_fixed_t y[18])
 {
   mad_fixed_t a0,  a1,  a2,  a3,  a4,  a5,  a6,  a7,  a8,  a9,  a10, a11, a12;
@@ -2147,7 +2147,7 @@ void imdct36(mad_fixed_t const X[18], mad_fixed_t x[36])
  * NAME:	III_imdct_l()
  * DESCRIPTION:	perform IMDCT and windowing for long blocks
  */
-static
+static __attribute__((noinline))
 void III_imdct_l(mad_fixed_t const X[18], mad_fixed_t z[36],
 		 unsigned int block_type)
 {
@@ -2234,7 +2234,7 @@ void III_imdct_l(mad_fixed_t const X[18], mad_fixed_t z[36],
  * NAME:	III_imdct_s()
  * DESCRIPTION:	perform IMDCT and windowing for short blocks
  */
-static
+static __attribute__((noinline))
 void III_imdct_s(mad_fixed_t const X[18], mad_fixed_t z[36])
 {
   mad_fixed_t y[36], *yptr;
@@ -2361,7 +2361,7 @@ void III_overlap(mad_fixed_t const output[36], mad_fixed_t overlap[18],
  * NAME:	III_overlap_z()
  * DESCRIPTION:	perform "overlap-add" of zero IMDCT outputs
  */
-static inline
+static
 void III_overlap_z(mad_fixed_t overlap[18],
 		   mad_fixed_t sample[18][32], unsigned int sb)
 {
@@ -2401,7 +2401,7 @@ void III_overlap_z(mad_fixed_t overlap[18],
  * NAME:	III_freqinver()
  * DESCRIPTION:	perform subband frequency inversion for odd sample lines
  */
-static
+static __attribute__((noinline))
 void III_freqinver(mad_fixed_t sample[18][32], unsigned int sb)
 {
   unsigned int i;
@@ -2743,7 +2743,7 @@ int mad_layer_III(struct mad_stream *stream, struct mad_frame *frame)
 	memcpy(*stream->main_data + stream->md_len,
 	       mad_bit_nextbyte(&stream->ptr),
 	       frame_used = md_len - si.main_data_begin);
-	stream->md_len += frame_used;
+         stream->md_len += frame_used;
       }
     }
   }
@@ -2778,8 +2778,7 @@ int mad_layer_III(struct mad_stream *stream, struct mad_frame *frame)
   /* preload main_data buffer with up to 511 bytes for next frame(s) */
 
   if (frame_free >= next_md_begin) {
-    memcpy(*stream->main_data,
-	   stream->next_frame - next_md_begin, next_md_begin);
+    memcpy(*stream->main_data, stream->next_frame - next_md_begin, next_md_begin);
     stream->md_len = next_md_begin;
   }
   else {
@@ -2791,16 +2790,14 @@ int mad_layer_III(struct mad_stream *stream, struct mad_frame *frame)
 	extra = next_md_begin - frame_free;
 
       if (extra < stream->md_len) {
-	memmove(*stream->main_data,
-		*stream->main_data + stream->md_len - extra, extra);
-	stream->md_len = extra;
+        memmove(*stream->main_data,	*stream->main_data + stream->md_len - extra, extra);
+        stream->md_len = extra;
       }
     }
     else
       stream->md_len = 0;
 
-    memcpy(*stream->main_data + stream->md_len,
-	   stream->next_frame - frame_free, frame_free);
+    memcpy(*stream->main_data + stream->md_len, stream->next_frame - frame_free, frame_free);
     stream->md_len += frame_free;
   }
 
