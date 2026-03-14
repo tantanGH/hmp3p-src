@@ -1,7 +1,7 @@
 #ifndef __H_HMP3P__
 #define __H_HMP3P__
 
-#define VERSION "0.8.0 (2026/03/13)"
+#define VERSION "0.8.1 (2026/03/14)"
 
 #define MAX_PATH_LEN (256)
 
@@ -21,7 +21,12 @@
 #define DRIVER_PCM8PP   (1)
 
 #define DEFAULT_VOLUME  (6)
+
+#ifdef __mc68060__
+#define DEFAULT_BUFFERS (5)
+#else
 #define DEFAULT_BUFFERS (4)
+#endif
 
 //
 //  link array chain table

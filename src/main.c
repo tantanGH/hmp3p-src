@@ -162,13 +162,6 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   // default return code
   int32_t rc = 1;
 
-  // preserve abort vectors
-  g_abort_vector1 = INTVCS(0xFFF1, (int8_t*)abort_application);
-  g_abort_vector2 = INTVCS(0xFFF2, (int8_t*)abort_application);  
-
-  // preserve function key mode
-  g_funckey_mode = C_FNKMOD(-1);
-
   // command line options
   uint8_t* mp3_file_name = NULL;
   int16_t playback_volume = DEFAULT_VOLUME;
@@ -201,6 +194,13 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
     goto exit;
   }
 #endif
+
+  // preserve abort vectors
+  g_abort_vector1 = INTVCS(0xFFF1, (int8_t*)abort_application);
+  g_abort_vector2 = INTVCS(0xFFF2, (int8_t*)abort_application);  
+
+  // preserve function key mode
+  g_funckey_mode = C_FNKMOD(-1);
 
   // parse command line options
   for (int16_t i = 1; i < argc; i++) {
