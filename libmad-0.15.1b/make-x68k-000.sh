@@ -13,8 +13,8 @@ AR=${XDEV68K_DIR}/x68k_bin/AR.X
 
 INCLUDE_FLAGS="-I${XDEV68K_DIR}/include/xc -I${XDEV68K_DIR}/include/xdev68k"
 
-COMMON_FLAGS="-m68000 -msoft-float -mstrict-align -O3 \
-    -fomit-frame-pointer -fstrict-aliasing \
+COMMON_FLAGS="-m68000 -msoft-float -O3 \
+    -fomit-frame-pointer \
     -finline-functions -finline-limit=10000 \
     -falign-functions=4 -falign-loops=4 \
     -funroll-loops -fpeel-loops -fno-builtin \
@@ -22,8 +22,8 @@ COMMON_FLAGS="-m68000 -msoft-float -mstrict-align -O3 \
 
 CFLAGS="${COMMON_FLAGS} -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall-used-a2 \
     -fexec-charset=cp932 -fverbose-asm \
-		-DXDEV68K -DFPM_DEFAULT -DOPT_SPEED -DOPT_SSO \
-    -D__OPT_X68K_HIMEM__ -D__OPT_X68K_FAST_FRAME_DECODE__ -D__OPT_X68K_FAST_LAYER_DECODE__ -D__OPT_X68K_16BIT_PCM_DIRECT__"
+		-DXDEV68K -DFPM_DEFAULT -DOPT_SPEED \
+    -D__OPT_X68K_HIMEM__ -D__OPT_X68K_FAST_LAYER_DECODE__ -D__OPT_X68K_16BIT_PCM_DIRECT__"
 
 LIBS="${XDEV68K_DIR}/lib/xc/CLIB.L ${XDEV68K_DIR}/lib/xc/DOSLIB.L ${XDEV68K_DIR}/lib/xc/IOCSLIB.L ${XDEV68K_DIR}/lib/xc/FLOATFNC.L ${XDEV68K_DIR}/lib/m68k_elf/m68000/libgcc.a"
 

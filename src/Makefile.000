@@ -38,8 +38,8 @@ COMMON_FLAGS = -m68000 -msoft-float -O3 -fomit-frame-pointer \
 		-finline-functions -finline-limit=10000 \
     	-funroll-loops -fpeel-loops \
     	-falign-functions=4 -falign-loops=4 \
-    	-fno-builtin -mno-strict-align \
 		${INCLUDE_FLAGS}
+
 CFLAGS = $(COMMON_FLAGS) -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall-used-a2 \
     -fexec-charset=cp932 -fverbose-asm \
 	-D__OPT_X68K_16BIT_PCM_DIRECT__

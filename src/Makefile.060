@@ -49,7 +49,7 @@ COMMON_FLAGS = -m68060 -msoft-float -Os \
 
 CFLAGS = $(COMMON_FLAGS) -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall-used-a2 \
     -fexec-charset=cp932 -fverbose-asm \
-	-D__NO_VERBOSE__ -D__NO_VERBOSE2__ -D__NO_VERBOSE3__ -D__OPT_X68K_16BIT_PCM_DIRECT__
+	-D__NO_VERBOSE__ -D__NO_VERBOSE2__ -D__OPT_X68K_16BIT_PCM_DIRECT__
 
 # *.c ソースファイル
 C_SRCS = himem.c crtc.c pcm8a.c pcm8pp.c mp3_decode.c picojpeg.c jpeg_decode.c main.c
