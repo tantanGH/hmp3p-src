@@ -28,7 +28,7 @@ TARGET_FILE = HMP3P.X
 DOCUMENT_FILE = HMP3P.DOC
 
 # Distribution package 
-PACKAGE_FILE = ../HMP3P080.ZIP
+PACKAGE_FILE = ../HMP3P081.ZIP
 
 # ヘッダ検索パス
 INCLUDE_FLAGS = -I${XDEV68K_DIR}/include/xc -I${XDEV68K_DIR}/include/xdev68k -I${LIBMAD_DIR}
@@ -41,7 +41,8 @@ COMMON_FLAGS = -m68000 -msoft-float -O3 -fomit-frame-pointer \
     	-fno-builtin -mno-strict-align \
 		${INCLUDE_FLAGS}
 CFLAGS = $(COMMON_FLAGS) -Wno-builtin-declaration-mismatch -fcall-used-d2 -fcall-used-a2 \
-    -fexec-charset=cp932 -fverbose-asm -D__OPT_X68K_16BIT_PCM_DIRECT__
+    -fexec-charset=cp932 -fverbose-asm \
+	-D__OPT_X68K_16BIT_PCM_DIRECT__
 
 # *.c ソースファイル
 C_SRCS = himem.c crtc.c pcm8a.c pcm8pp.c mp3_decode.c picojpeg.c jpeg_decode.c main.c
