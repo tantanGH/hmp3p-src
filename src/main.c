@@ -182,6 +182,10 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   uint8_t error_mes[ 256 ];
   error_mes[0] = '\0';
   
+  // preserve abort vectors
+  g_abort_vector1 = INTVCS(0xFFF1, (int8_t*)abort_application);
+  g_abort_vector2 = INTVCS(0xFFF2, (int8_t*)abort_application);  
+
   // check mpu type
 #ifdef __mc68060__
   if (get_mpu_type() < 6) {
@@ -194,10 +198,6 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
     goto exit;
   }
 #endif
-
-  // preserve abort vectors
-  g_abort_vector1 = INTVCS(0xFFF1, (int8_t*)abort_application);
-  g_abort_vector2 = INTVCS(0xFFF2, (int8_t*)abort_application);  
 
   // preserve function key mode
   g_funckey_mode = C_FNKMOD(-1);
