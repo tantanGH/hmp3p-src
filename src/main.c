@@ -186,6 +186,9 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   g_abort_vector1 = INTVCS(0xFFF1, (int8_t*)abort_application);
   g_abort_vector2 = INTVCS(0xFFF2, (int8_t*)abort_application);  
 
+  // preserve function key mode
+  g_funckey_mode = C_FNKMOD(-1);
+
   // check mpu type
 #ifdef __mc68060__
   if (get_mpu_type() < 6) {
@@ -198,9 +201,6 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
     goto exit;
   }
 #endif
-
-  // preserve function key mode
-  g_funckey_mode = C_FNKMOD(-1);
 
   // parse command line options
   for (int16_t i = 1; i < argc; i++) {
