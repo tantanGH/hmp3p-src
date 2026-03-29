@@ -1,4 +1,4 @@
-  .align 2
+  .align 4
 
   .globl _cp932rsc_unknown_option
   .globl _cp932rsc_too_many_files

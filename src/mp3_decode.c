@@ -1,8 +1,9 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
-#include "himem.h"
-#include "utf16_cp932.h"
+#include <himem.h>
+#include <utf16_cp932.h>
 #include "jpeg_decode.h"
 #include "mp3_decode.h"
 
@@ -48,27 +49,6 @@ static inline int16_t scale_12bit(mad_fixed_t sample) {
 
   // quantize
   return sample >> (MAD_F_FRACBITS + 1 - 12);
-}
-
-//
-//  utf-16 to cp932
-//
-static void convert_utf16_to_cp932(uint8_t* cp932_buffer, uint8_t* utf16_buffer, size_t utf16_bytes) {
-
-  // CAUTION: utf16_buffer may be odd address and word access will fail on 68000 machines
-
-  int16_t endian = utf16_buffer[0] == 0xfe ? 1 : 0;   // 0:little, 1:big
-  size_t utf16_len = ( utf16_bytes - 2 ) / 2;
-
-  for (int16_t i = 0; i < utf16_len; i++) {
-    uint16_t utf16_code = ( endian == 0 ) ? ( utf16_buffer[ 2 + i * 2 + 1 ] << 8 ) | ( utf16_buffer[ 2 + i * 2 + 0 ] ) : 
-                                            ( utf16_buffer[ 2 + i * 2 + 0 ] << 8 ) | ( utf16_buffer[ 2 + i * 2 + 1 ] );
-    uint16_t cp932_code = utf16_to_cp932_map[ utf16_code ];
-    size_t cp932_len = strlen(cp932_buffer);
-    cp932_buffer[ cp932_len ] = cp932_code >> 8;
-    cp932_buffer[ cp932_len + 1 ] = cp932_code & 0xff;
-    cp932_buffer[ cp932_len + 2 ] = '\0';
-  }
 }
 
 //
@@ -137,59 +117,59 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
     } else if (memcmp(frame_header, "TIT2", 4) == 0) {
 
       // title
-      uint8_t* frame_data = himem_malloc(frame_size, 0);
+      uint8_t* frame_data = malloc(frame_size);
       fread(frame_data, 1, frame_size, fp);
       if (frame_data[0] == 0x00) {              // ISO-8859-1
-        decode->mp3_title = himem_malloc(frame_size - 1 + 1, 0);
+        decode->mp3_title = malloc(frame_size - 1 + 1);
         memcpy(decode->mp3_title, frame_data + 1, frame_size - 1);
         decode->mp3_title[frame_size - 1] = '\0';
       } else if (frame_data[0] == 0x01) {       // UTF-16 with BOM
-        decode->mp3_title = himem_malloc(frame_size - 3 + 1, 0);
+        decode->mp3_title = malloc(frame_size - 3 + 1);
         decode->mp3_title[0] = '\0';
-        convert_utf16_to_cp932(decode->mp3_title, frame_data + 1, frame_size - 1);
+        utf16_to_cp932(decode->mp3_title, frame_size - 3 + 1, frame_data + 1, frame_size - 1);
       }
-      himem_free(frame_data, 0);
+      free(frame_data);
 
     } else if (memcmp(frame_header, "TPE1", 4) == 0 && frame_size >= 4) {
 
       // artist
-      uint8_t* frame_data = himem_malloc(frame_size, 0);
+      uint8_t* frame_data = malloc(frame_size);
       fread(frame_data, 1, frame_size, fp);
 
       if (frame_data[0] == 0x00) {              // ISO-8859-1
-        decode->mp3_artist = himem_malloc(frame_size - 1 + 1, 0);
+        decode->mp3_artist = malloc(frame_size - 1 + 1);
         memcpy(decode->mp3_artist, frame_data + 1, frame_size - 1);
         decode->mp3_artist[frame_size - 1] = '\0';
       } else if (frame_data[0] == 0x01) {       // UTF-16 with BOM
-        decode->mp3_artist = himem_malloc(frame_size - 3 + 1, 0);
+        decode->mp3_artist = malloc(frame_size - 3 + 1);
         decode->mp3_artist[0] = '\0';
-        convert_utf16_to_cp932(decode->mp3_artist, frame_data + 1, frame_size - 1);
+        utf16_to_cp932(decode->mp3_artist, frame_size - 3 + 1, frame_data + 1, frame_size - 1);
       }
-      himem_free(frame_data, 0);   
+      free(frame_data);   
 
     } else if (memcmp(frame_header, "TALB", 4) == 0) {
 
       // album
-      uint8_t* frame_data = himem_malloc(frame_size, 0);
+      uint8_t* frame_data = malloc(frame_size);
       fread(frame_data, 1, frame_size, fp);
 
       if (frame_data[0] == 0x00) {              // ISO-8859-1
-        decode->mp3_album = himem_malloc(frame_size - 1 + 1, 0);
+        decode->mp3_album = malloc(frame_size - 1 + 1);
         memcpy(decode->mp3_album, frame_data + 1, frame_size - 1);
         decode->mp3_album[frame_size - 1] = '\0';
       } else if (frame_data[0] == 0x01) {       // UTF-16 with BOM
-        decode->mp3_album = himem_malloc(frame_size - 3 + 1, 0);
+        decode->mp3_album = malloc(frame_size - 3 + 1);
         decode->mp3_album[0] = '\0';
-        convert_utf16_to_cp932(decode->mp3_album, frame_data + 1, frame_size - 1);
+        utf16_to_cp932(decode->mp3_album, frame_size - 3 + 1, frame_data + 1, frame_size - 1);
       }
-      himem_free(frame_data, 0);
+      free(frame_data);
 
     } else if (pic_brightness > 0 && memcmp(frame_header, "APIC", 4) == 0) {
 
 //      printf("found APIC.\n");
 
       // album art
-      uint8_t* frame_data = himem_malloc(frame_size, 0);
+      uint8_t* frame_data = malloc(frame_size);
       fread(frame_data, 1, frame_size, fp);
 
       uint8_t* mime = frame_data+1;
@@ -215,7 +195,7 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
 //        png_close(&png);
       }
 
-      himem_free(frame_data, 0);
+      free(frame_data);
 
     } else {
       // other tags
@@ -248,7 +228,7 @@ int32_t mp3_decode_init(MP3_DECODE_HANDLE* decode) {
   decode->mp3_sample_rate = -1;
   decode->mp3_channels = -1;
   decode->resample_counter = 0;
-  decode->resample_src_buffer = (int16_t*)himem_malloc(sizeof(int16_t) * MAD_MAX_SAMPLES * 2, 1);
+  decode->resample_src_buffer = (int16_t*)himem_malloc(sizeof(int16_t) * MAD_MAX_SAMPLES * 2);
 
   // mad
   mad_stream_init(&(decode->mad_stream));
@@ -272,19 +252,19 @@ void mp3_decode_close(MP3_DECODE_HANDLE* decode) {
   mad_stream_finish(&(decode->mad_stream));
 
   if (decode->resample_src_buffer != NULL) {
-    himem_free(decode->resample_src_buffer, 1);
+    himem_free(decode->resample_src_buffer);
     decode->resample_src_buffer = NULL;
   }
   if (decode->mp3_title != NULL) {
-    himem_free(decode->mp3_title, 0);
+    free(decode->mp3_title);
     decode->mp3_title = NULL;
   }
   if (decode->mp3_artist != NULL) {
-    himem_free(decode->mp3_artist, 0);
+    free(decode->mp3_artist);
     decode->mp3_artist = NULL;
   }
   if (decode->mp3_album != NULL) {
-    himem_free(decode->mp3_album, 0);
+    free(decode->mp3_album);
     decode->mp3_album = NULL;
   }
 
@@ -323,7 +303,7 @@ int32_t mp3_decode_setup(MP3_DECODE_HANDLE* decode, void* mp3_data, size_t mp3_d
 
   if (decode->mad_stream.main_data == NULL) {
     //stream->main_data = malloc(MAD_BUFFER_MDLEN);
-    decode->mad_stream.main_data = himem_malloc(MAD_BUFFER_MDLEN, 1);
+    decode->mad_stream.main_data = himem_malloc(MAD_BUFFER_MDLEN);
     if (decode->mad_stream.main_data == NULL) {
       rc = -1;
       goto exit;
@@ -332,7 +312,7 @@ int32_t mp3_decode_setup(MP3_DECODE_HANDLE* decode, void* mp3_data, size_t mp3_d
 
   if (decode->mad_frame.overlap == NULL) {
     //frame->overlap = calloc(2 * 32 * 18, sizeof(mad_fixed_t));
-    decode->mad_frame.overlap = himem_calloc(2 * 32 * 18, sizeof(mad_fixed_t), 1);
+    decode->mad_frame.overlap = himem_calloc(2 * 32 * 18, sizeof(mad_fixed_t));
     if (decode->mad_frame.overlap == NULL) {
       rc = -1;
       goto exit;

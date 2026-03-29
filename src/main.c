@@ -2,21 +2,22 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stat.h>
 #include <doslib.h>
 #include <iocslib.h>
 
+// himem
+#include <himem.h>
+
+// pcm driver
+#include <pcm8a.h>
+#include <pcm8pp.h>
+
 // devices
 #include "keyboard.h"
-#include "himem.h"
 #include "crtc.h"
 
 // resource
 #include "cp932rsc.h"
-
-// pcm driver
-#include "pcm8a.h"
-#include "pcm8pp.h"
 
 // codec
 #include "mp3_decode.h"
@@ -75,11 +76,11 @@ static void abort_application() {
     CHAIN_TABLE* rct = g_init_chain_table;
     while (rct != NULL) {
       if (rct->buffer != NULL) {
-        himem_free(rct->buffer, 1);
+        himem_free(rct->buffer);
       }
       CHAIN_TABLE* pre_rct = rct;
       rct = rct->next;
-      himem_free(pre_rct, 1);
+      himem_free(pre_rct);
     }
     g_init_chain_table = NULL;
   }
@@ -89,11 +90,11 @@ static void abort_application() {
     CHAIN_TABLE_EX* rct = g_init_chain_table_ex;
     while (rct != NULL) {
       if (rct->buffer != NULL) {
-        himem_free(rct->buffer, 1);
+        himem_free(rct->buffer);
       }
       CHAIN_TABLE_EX* pre_rct = rct;
       rct = rct->next;
-      himem_free(pre_rct, 1);
+      himem_free(pre_rct);
     }
     g_init_chain_table_ex = NULL;
   }
@@ -250,7 +251,7 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
         goto exit;
       }
       mp3_file_name = argv[i];
-      if (strlen(mp3_file_name) < 5 || stricmp(mp3_file_name + strlen(mp3_file_name) - 4, ".mp3") != 0) {
+      if (strlen(mp3_file_name) < 5 || strcasecmp(mp3_file_name + strlen(mp3_file_name) - 4, ".mp3") != 0) {
         strcpy(error_mes, cp932rsc_not_mp3_file);
         goto exit;
       }
@@ -390,7 +391,7 @@ try:
 
   // allocate file read buffer
   size_t fread_buffer_len = mp3_data_size;
-  fread_buffer = himem_malloc(fread_buffer_len, use_high_memory);
+  fread_buffer = himem_malloc(fread_buffer_len);
   if (fread_buffer == NULL) {
     strcpy(error_mes, cp932rsc_himem_shortage);
     goto catch;
@@ -400,7 +401,7 @@ try:
   if (staging_file_read) {
     // use staging buffer on main memory (for SCSI disk)
     printf("\rLoading MP3 file...\x1b[0K");
-    fread_staging_buffer = himem_malloc(FREAD_STAGING_BUFFER_BYTES, 0);   // allocate in main memory
+    fread_staging_buffer = malloc(FREAD_STAGING_BUFFER_BYTES);   // allocate in main memory
     if (fread_staging_buffer == NULL) {
       strcpy(error_mes, cp932rsc_mainmem_shortage);
       goto catch;
@@ -411,7 +412,7 @@ try:
       memcpy(fread_buffer + read_len, fread_staging_buffer, len);
       read_len += len;
     } while (read_len < mp3_data_size);
-    himem_free(fread_staging_buffer, 0);
+    free(fread_staging_buffer);
     fread_staging_buffer = NULL;
     printf("\r\x1b[0K");
   } else {
@@ -475,7 +476,7 @@ try:
     if (playback_driver == DRIVER_PCM8A) {
 
       // allocate a new chain table entry in high memory
-      CHAIN_TABLE* ct = (CHAIN_TABLE*)himem_malloc(sizeof(CHAIN_TABLE), use_high_memory);
+      CHAIN_TABLE* ct = (CHAIN_TABLE*)himem_malloc(sizeof(CHAIN_TABLE));
       if (ct == NULL) {
         strcpy(error_mes, cp932rsc_himem_shortage);
         goto catch;
@@ -485,7 +486,7 @@ try:
       memset(ct, 0, sizeof(CHAIN_TABLE));
 
       // allocate pcm data buffer for this chain table entry
-      ct->buffer = himem_malloc(chain_table_buffer_bytes, use_high_memory);
+      ct->buffer = himem_malloc(chain_table_buffer_bytes);
       if (ct->buffer == NULL) {
         strcpy(error_mes, cp932rsc_himem_shortage);
         goto catch;
@@ -500,8 +501,8 @@ try:
 
       // end of mp3?
       if (decoded_bytes == 0) {
-        himem_free(ct->buffer, use_high_memory);
-        himem_free(ct, use_high_memory);
+        himem_free(ct->buffer);
+        himem_free(ct);
         end_flag = 1;
         break;
       }
@@ -529,7 +530,7 @@ try:
     if (playback_driver == DRIVER_PCM8PP) {
 
       // allocate a new chain table entry in high memory
-      CHAIN_TABLE_EX* ct = (CHAIN_TABLE_EX*)himem_malloc(sizeof(CHAIN_TABLE_EX), use_high_memory);
+      CHAIN_TABLE_EX* ct = (CHAIN_TABLE_EX*)himem_malloc(sizeof(CHAIN_TABLE_EX));
       if (ct == NULL) {
         strcpy(error_mes, cp932rsc_himem_shortage);
         goto catch;
@@ -539,7 +540,7 @@ try:
       memset(ct, 0, sizeof(CHAIN_TABLE_EX));
 
       // allocate pcm data buffer for this chain table entry
-      ct->buffer = himem_malloc(chain_table_ex_buffer_bytes, use_high_memory);
+      ct->buffer = himem_malloc(chain_table_ex_buffer_bytes);
       if (ct->buffer == NULL) {
         strcpy(error_mes, cp932rsc_himem_shortage);
         goto catch;
@@ -554,8 +555,8 @@ try:
 
       // end of mp3?
       if (decoded_bytes == 0) {
-        himem_free(ct->buffer, use_high_memory);
-        himem_free(ct, use_high_memory);
+        himem_free(ct->buffer);
+        himem_free(ct);
         end_flag = 1;
         break;
       }
@@ -698,7 +699,7 @@ try:
       if (playback_driver == DRIVER_PCM8A) {
 
         // allocate the next chain table entry
-        CHAIN_TABLE* ct = (CHAIN_TABLE*)himem_malloc(sizeof(CHAIN_TABLE), use_high_memory);
+        CHAIN_TABLE* ct = (CHAIN_TABLE*)himem_malloc(sizeof(CHAIN_TABLE));
         if (ct == NULL) {
           strcpy(error_mes, cp932rsc_himem_shortage);
           goto catch;
@@ -708,7 +709,7 @@ try:
         memset(ct, 0, sizeof(CHAIN_TABLE));
 
         // allocate pcm buffer for this chain table entry
-        ct->buffer = himem_malloc(chain_table_buffer_bytes, use_high_memory);
+        ct->buffer = himem_malloc(chain_table_buffer_bytes);
         if (ct->buffer == NULL) {
           strcpy(error_mes, cp932rsc_himem_shortage);
           goto catch;
@@ -723,8 +724,8 @@ try:
 
         // end of mp3?
         if (decoded_bytes == 0) {
-          himem_free(ct->buffer, use_high_memory);
-          himem_free(ct, use_high_memory);
+          himem_free(ct->buffer);
+          himem_free(ct);
           end_flag = 1;
           if (!quiet_mode) B_PRINT("|");
           continue;
@@ -776,7 +777,7 @@ try:
       if (playback_driver == DRIVER_PCM8PP) {
 
         // allocate the next chain table entry
-        CHAIN_TABLE_EX* ct = (CHAIN_TABLE_EX*)himem_malloc(sizeof(CHAIN_TABLE_EX), use_high_memory);
+        CHAIN_TABLE_EX* ct = (CHAIN_TABLE_EX*)himem_malloc(sizeof(CHAIN_TABLE_EX));
         if (ct == NULL) {
           strcpy(error_mes, cp932rsc_himem_shortage);
           goto catch;
@@ -786,7 +787,7 @@ try:
         memset(ct, 0, sizeof(CHAIN_TABLE_EX));
 
         // allocate pcm buffer for this chain table entry
-        ct->buffer = himem_malloc(chain_table_ex_buffer_bytes, use_high_memory);
+        ct->buffer = himem_malloc(chain_table_ex_buffer_bytes);
         if (ct->buffer == NULL) {
           strcpy(error_mes, cp932rsc_himem_shortage);
           goto catch;
@@ -801,8 +802,8 @@ try:
 
         // end of mp3?
         if (decoded_bytes == 0) {
-          himem_free(ct->buffer, use_high_memory);
-          himem_free(ct, use_high_memory);
+          himem_free(ct->buffer);
+          himem_free(ct);
           end_flag = 1;
           if (!quiet_mode) B_PRINT("|");
           continue;
@@ -875,11 +876,11 @@ catch:
 
   // reclaim file read buffers
   if (fread_staging_buffer != NULL) {
-    himem_free(fread_staging_buffer, 0);
+    free(fread_staging_buffer);
     fread_staging_buffer = NULL;
   }
   if (fread_buffer != NULL) {
-    himem_free(fread_buffer, use_high_memory);
+    himem_free(fread_buffer);
     fread_buffer = NULL;
   }
 
@@ -891,11 +892,11 @@ catch:
     CHAIN_TABLE* rct = g_init_chain_table;
     while (rct != NULL) {
       if (rct->buffer != NULL) {
-        himem_free(rct->buffer, 1);
+        himem_free(rct->buffer);
       }
       CHAIN_TABLE* pre_rct = rct;
       rct = rct->next;
-      himem_free(pre_rct, 1);
+      himem_free(pre_rct);
     }
     g_init_chain_table = NULL;
   }
@@ -905,11 +906,11 @@ catch:
     CHAIN_TABLE_EX* rct = g_init_chain_table_ex;
     while (rct != NULL) {
       if (rct->buffer != NULL) {
-        himem_free(rct->buffer, 1);
+        himem_free(rct->buffer);
       }
       CHAIN_TABLE_EX* pre_rct = rct;
       rct = rct->next;
-      himem_free(pre_rct, 1);
+      himem_free(pre_rct);
     }
     g_init_chain_table_ex = NULL;
   }
