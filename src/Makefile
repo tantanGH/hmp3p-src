@@ -27,9 +27,6 @@ AS = m68k-xelf-as
 # HAS to GAS コンバータ
 HAS2GAS = python3 has2gas.py
 
-# libmad directory
-LIBMAD_DIR = ../libmad-0.15.1b
-
 # ヘッダ検索パス
 INCLUDE_FLAGS = -I${ELF2X68K_DIR}/lib/gcc/m68k-elf/13.4.0/include \
 				-I${ELF2X68K_DIR}/m68k-elf/include \
@@ -37,10 +34,10 @@ INCLUDE_FLAGS = -I${ELF2X68K_DIR}/lib/gcc/m68k-elf/13.4.0/include \
 				-I../libs/libhimem/include \
 				-I../libs/libpcm8a/include \
 				-I../libs/libpcm8pp/include \
-				-I${LIBMAD_DIR}
+				-I../libs/libmad-x68k/include
 
 # ライブラリ検索パス
-LDFLAGS = -L../libs/libutf16/lib -L../libs/libhimem/lib -L../libs/libpcm8a/lib -L../libs/libpcm8pp/lib
+LDFLAGS = -L../libs/libutf16/lib -L../libs/libhimem/lib -L../libs/libpcm8a/lib -L../libs/libpcm8pp/lib -L../libs/libmad-x68k/lib
 
 # *.c ソースファイル
 C_SRCS = crtc.c picojpeg.c jpeg_decode.c mp3_decode.c main.c
@@ -52,7 +49,9 @@ ASM_SRCS = cp932rsc.s
 HEADER_SRCS = cp932rsc.h crtc.h picojpeg.h jpeg_decode.h mp3_decode.h hmp3p.h
 
 # リンク対象のライブラリファイル
-LIBS = -ldos -liocs -lutf16 -lhimem -lpcm8a -lpcm8pp
+LIBS_000 = -ldos -liocs -lutf16 -lhimem -lpcm8a -lpcm8pp -lmad
+LIBS_030 = -ldos -liocs -lutf16 -lhimem -lpcm8a -lpcm8pp -lmad030
+LIBS_060 = -ldos -liocs -lutf16 -lhimem -lpcm8a -lpcm8pp -lmad060
 
 # 中間ファイル生成用ディレクトリ
 INTERMEDIATE_DIR_000 = _build000/elf2x68k
@@ -108,13 +107,13 @@ clean :
 # 実行ファイルの生成
 ${INTERMEDIATE_DIR_000}/$(TARGET_FILE_000) : $(OBJS_000)
 	mkdir -p $(INTERMEDIATE_DIR_000)
-	$(CC) $(COMMON_FLAGS_000) $(LDFLAGS) -o ${INTERMEDIATE_DIR_000}/${TARGET_FILE_000} $(OBJS_000) $(LIBS)
+	$(CC) $(COMMON_FLAGS_000) $(LDFLAGS) -o ${INTERMEDIATE_DIR_000}/${TARGET_FILE_000} $(OBJS_000) $(LIBS_000)
 ${INTERMEDIATE_DIR_030}/$(TARGET_FILE_030) : $(OBJS_030)
 	mkdir -p $(INTERMEDIATE_DIR_030)
-	$(CC) $(COMMON_FLAGS_030) $(LDFLAGS) -o ${INTERMEDIATE_DIR_030}/${TARGET_FILE_030} $(OBJS_030) $(LIBS)
+	$(CC) $(COMMON_FLAGS_030) $(LDFLAGS) -o ${INTERMEDIATE_DIR_030}/${TARGET_FILE_030} $(OBJS_030) $(LIBS_030)
 ${INTERMEDIATE_DIR_060}/$(TARGET_FILE_060) : $(OBJS_060)
 	mkdir -p $(INTERMEDIATE_DIR_060)
-	$(CC) $(COMMON_FLAGS_060) $(LDFLAGS) -o ${INTERMEDIATE_DIR_060}/${TARGET_FILE_060} $(OBJS_060) $(LIBS)
+	$(CC) $(COMMON_FLAGS_060) $(LDFLAGS) -o ${INTERMEDIATE_DIR_060}/${TARGET_FILE_060} $(OBJS_060) $(LIBS_060)
 
 # *.c ソースのコンパイル
 $(INTERMEDIATE_DIR_000)/%.o : %.c Makefile $(HEADER_SRCS)
