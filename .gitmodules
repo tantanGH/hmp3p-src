@@ -10,3 +10,6 @@
 [submodule "libs/libpcm8pp"]
 	path = libs/libpcm8pp
 	url = https://github.com/tantanGH/libpcm8pp.git
+[submodule "libs/libmad-x68k"]
+	path = libs/libmad-x68k
+	url = https://github.com/tantanGH/libmad-x68k.git
