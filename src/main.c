@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <jstring.h>
 #include <doslib.h>
 #include <iocslib.h>
 
@@ -12,9 +13,11 @@
 #include <pcm8a.h>
 #include <pcm8pp.h>
 
+// jpeg
+#include <jpeg.h>
+
 // devices
 #include "keyboard.h"
-#include "crtc.h"
 
 // resource
 #include "cp932rsc.h"
@@ -77,6 +80,7 @@ static void abort_application() {
     while (rct != NULL) {
       if (rct->buffer != NULL) {
         himem_free(rct->buffer);
+        rct->buffer = NULL;
       }
       CHAIN_TABLE* pre_rct = rct;
       rct = rct->next;
@@ -91,6 +95,7 @@ static void abort_application() {
     while (rct != NULL) {
       if (rct->buffer != NULL) {
         himem_free(rct->buffer);
+        rct->buffer = NULL;
       }
       CHAIN_TABLE_EX* pre_rct = rct;
       rct = rct->next;
@@ -110,7 +115,7 @@ static void abort_application() {
   // flush key buffer
   KFLUSHIO(0xff);
 
-  printf("Aborted.\n");
+  B_PRINT("Aborted.\r\n");
 
   exit(1);
 }
@@ -142,7 +147,7 @@ exit:
 //  show help message
 //
 static void show_help_message() {
-  printf("HMP3P.X - High Memory MP3 player for X680x0 + Mercury-UNIT version " VERSION " by tantan\n");
+  printf("HMP3P.X - High Memory MP3 player for X680x0 version " VERSION " by tantan\n");
   printf("usage: hmp3p [options] <input-file.mp3>\n");
   printf("options:\n");
   printf("     -l[n] ... loop count (none:endless, default:1)\n");
@@ -164,7 +169,7 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   int32_t rc = 1;
 
   // command line options
-  uint8_t* mp3_file_name = NULL;
+  //uint8_t* mp3_file_name = NULL;
   int16_t playback_volume = DEFAULT_VOLUME;
   int16_t loop_count = 1;
   int16_t mp3_quality = 0;
@@ -182,6 +187,10 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   // exit error message
   uint8_t error_mes[ 256 ];
   error_mes[0] = '\0';
+
+  // mp3 raw file name
+  uint8_t mp3_file_name[ MAX_PATH_LEN ];
+  mp3_file_name[0] = '\0';
   
   // preserve abort vectors
   g_abort_vector1 = INTVCS(0xFFF1, (int8_t*)abort_application);
@@ -246,11 +255,23 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
         goto exit;
       }
     } else {
-      if (mp3_file_name != NULL) {
+      if (mp3_file_name[0] != '\0') {
         strcpy(error_mes, cp932rsc_too_many_files);
         goto exit;
       }
-      mp3_file_name = argv[i];
+      if (argv[i][0] == '"' || argv[i][0] == '\'') {
+        // detected filename quotation
+        struct PDBADR* pdb = GETPDB();
+        uint8_t* q0 = jstrchr((uint8_t*)(pdb->comline),argv[i][0]);
+        uint8_t* q1 = jstrrchr((uint8_t*)(pdb->comline),argv[i][0]);
+        if (q0 < q1) {
+          memcpy(mp3_file_name, q0 + 1, q1 - q0 - 1);
+          mp3_file_name[q1 - q0 - 1] = '\0';
+        }
+        break;  // no more parsing
+      } else {
+        strcpy(mp3_file_name, argv[i]);
+      }
       if (strlen(mp3_file_name) < 5 || strcasecmp(mp3_file_name + strlen(mp3_file_name) - 4, ".mp3") != 0) {
         strcpy(error_mes, cp932rsc_not_mp3_file);
         goto exit;
@@ -294,7 +315,7 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
 
   // credit
   if (pic_brightness == 0) {
-    printf("HMP3P.X - High Memory MP3 player for X680x0 + Mercury-UNIT version " VERSION " by tantan\n");
+    B_PRINT("HMP3P.X - High Memory MP3 player for X680x0 version " VERSION " by tantan\n");
   }
 
   // reset PCM8A/PCM8PP
@@ -309,11 +330,6 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   // cursor off
   C_CUROFF();
 
-  // enter supervisor mode if needed
-  if (pic_brightness > 0) {
-    B_SUPER(0);
-  }
-
   // display mp3 attribute at first play
   int16_t first_play = 1;
 
@@ -322,19 +338,12 @@ loop:
   // init crtc if album art is required
   if (pic_brightness > 0) {
 
-    G_CLR_ON();
-    crtc_set_extra_mode(0);
+    jpeg_crtmod_768x512_65536();
 
     C_FNKMOD(3);    // function key display off
     C_CLS_AL();
 
-    TPALET2(4, 0x0001);
-    TPALET2(5, TPALET2(1,-1));
-    TPALET2(6, TPALET2(2,-1));
-    TPALET2(7, TPALET2(3,-1));
-
-    struct TXFILLPTR txfil = { 2, 0, 0, 768, 512, 0xffff };
-    TXFILL(&txfil);
+    jpeg_fill_text_masks();
 
   }
 
@@ -344,10 +353,15 @@ loop:
   CHAIN_TABLE_EX* cur_chain_table_ex = NULL;
   size_t chain_table_ex_buffer_bytes = CHAIN_TABLE_EX_BUFFER_BYTES / (mp3_quality + 1);
 
+  // reclaimable chain table entries
+  CHAIN_TABLE* reclaim_chain_table = NULL;
+  CHAIN_TABLE_EX* reclaim_chain_table_ex = NULL;
+
   // file read buffers
   void* fread_buffer = NULL;
   void* fread_staging_buffer = NULL;
-  FILE* fp = NULL;
+  //FILE* fp = NULL;
+  int32_t fd = -1;
 
 try:
 
@@ -359,15 +373,15 @@ try:
   }
 
   // open input file
-  fp = fopen(mp3_file_name, "rb");
-  if (fp == NULL) {
+  fd = OPEN(mp3_file_name, 0);
+  if (fd < 0) {
     strcpy(error_mes, cp932rsc_file_open_error);
     goto catch;
   }
 
   // parse ID3v2 tags
   size_t skip_offset = 0;
-  int32_t ofs = mp3_decode_parse_tags(&mp3_decoder, pic_brightness, 0, fp);
+  int32_t ofs = mp3_decode_parse_tags(&mp3_decoder, pic_brightness, 0, fd);
   if (ofs < 0) {
     strcpy(error_mes, cp932rsc_id3tag_read_error);
     goto catch;
@@ -376,18 +390,12 @@ try:
 
   // adjust scroll position
   if (pic_brightness > 0) {
-    SCROLL(0, 512-128, 0);
-    SCROLL(1, 512-128, 0);
-    SCROLL(2, 512-128, 0);
-    SCROLL(3, 512-128, 0);
-    struct TXFILLPTR txfil = { 2, 128, 0, 512, 512, 0x0000 };
-    TXFILL(&txfil);
+    jpeg_open_text_masks();
   }
 
   // obtain data content size
-  fseek(fp, 0, SEEK_END);
-  uint32_t mp3_data_size = ftell(fp) - skip_offset;
-  fseek(fp, skip_offset, SEEK_SET);
+  uint32_t mp3_data_size = SEEK(fd, 0, 2) - skip_offset;
+  SEEK(fd, skip_offset, 0);
 
   // allocate file read buffer
   size_t fread_buffer_len = mp3_data_size;
@@ -400,7 +408,7 @@ try:
   // read whole mp3 file content into high memory
   if (staging_file_read) {
     // use staging buffer on main memory (for SCSI disk)
-    printf("\rLoading MP3 file...\x1b[0K");
+    B_PRINT("\rLoading MP3 file...\x1b[0K");
     fread_staging_buffer = malloc(FREAD_STAGING_BUFFER_BYTES);   // allocate in main memory
     if (fread_staging_buffer == NULL) {
       strcpy(error_mes, cp932rsc_mainmem_shortage);
@@ -408,24 +416,24 @@ try:
     }    
     size_t read_len = 0; 
     do {
-      size_t len = fread(fread_staging_buffer, 1, FREAD_STAGING_BUFFER_BYTES, fp);
+      size_t len = READ(fd, fread_staging_buffer, FREAD_STAGING_BUFFER_BYTES);
       memcpy(fread_buffer + read_len, fread_staging_buffer, len);
       read_len += len;
     } while (read_len < mp3_data_size);
     free(fread_staging_buffer);
     fread_staging_buffer = NULL;
-    printf("\r\x1b[0K");
+    B_PRINT("\r\x1b[0K");
   } else {
     // direct load to high memory from VDISK/WindrvXM
     size_t read_len = 0; 
     do {
       size_t read_size = (mp3_data_size - read_len) < FREAD_CHUNK_BYTES ? (mp3_data_size - read_len) : FREAD_CHUNK_BYTES;
-      size_t len = fread(fread_buffer + read_len, 1, read_size, fp);
+      size_t len = READ(fd, fread_buffer + read_len, read_size);
       read_len += len;
     } while (read_len < mp3_data_size);
   }
-  fclose(fp);
-  fp = NULL;
+  CLOSE(fd);
+  fd = -1;
 
   // setup mp3 decoder
   if (mp3_decode_setup(&mp3_decoder, fread_buffer, mp3_data_size, mp3_quality) != 0) {
@@ -436,31 +444,41 @@ try:
   // describe mp3 attributes
   if (first_play || pic_brightness > 0) {
 
-    printf("\n");
+    uint8_t mes[256];
 
-    printf("File name     : %s\n", mp3_file_name);
-    printf("Data size     : %d [bytes]\n", mp3_data_size);
-    printf("Data format   : %s\n", "MP3");
+    B_PRINT("\r\n");
+
+    sprintf(mes, "File name     : %s\r\n", mp3_file_name);
+    B_PRINT(mes);
+    sprintf(mes, "Data size     : %d [bytes]\r\n", mp3_data_size);
+    B_PRINT(mes);
+    sprintf(mes, "Data format   : %s\r\n", "MP3");
+    B_PRINT(mes);
 
     // describe playback drivers
-    printf("PCM driver    : %s (volume:%d)\n", 
+    sprintf(mes, "PCM driver    : %s (volume:%d)\r\n", 
               playback_driver == DRIVER_PCM8PP ? "PCM8PP" : 
               playback_driver == DRIVER_PCM8A  ? "PCM8A"  : "-", 
               playback_volume);
+    B_PRINT(mes);
 
-    printf("MP3 quality   : %s\n", mp3_quality == 1 ? "normal" : "high");
+    sprintf(mes, "MP3 quality   : %s\r\n", mp3_quality == 1 ? "normal" : "high");
+    B_PRINT(mes);
 
     if (mp3_decoder.mp3_title != NULL) {
-      printf("MP3 title     : %s\n", mp3_decoder.mp3_title);
+      sprintf(mes, "MP3 title     : %s\r\n", mp3_decoder.mp3_title);
+      B_PRINT(mes);
     }
     if (mp3_decoder.mp3_artist != NULL) {
-      printf("MP3 artist    : %s\n", mp3_decoder.mp3_artist);
+      sprintf(mes, "MP3 artist    : %s\r\n", mp3_decoder.mp3_artist);
+      B_PRINT(mes);
     }
     if (mp3_decoder.mp3_album != NULL) {
-      printf("MP3 album     : %s\n", mp3_decoder.mp3_album);
+      sprintf(mes, "MP3 album     : %s\r\n", mp3_decoder.mp3_album);
+      B_PRINT(mes);
     }
 
-    printf("\n");
+    B_PRINT("\r\n");
 
     //first_play = 0;
   }
@@ -471,7 +489,9 @@ try:
 
     if (end_flag) break;
 
-    printf("\rNow buffering (%d/%d) ... [SHIFT] key to cancel.", i+1, num_buffers);
+    uint8_t mes[256];
+    sprintf(mes,"\rNow buffering (%d/%d) ... [SHIFT] key to cancel.", i+1, num_buffers);
+    B_PRINT(mes);
 
     if (playback_driver == DRIVER_PCM8A) {
 
@@ -521,6 +541,11 @@ try:
       } else {
         cur_chain_table->next = ct;
         cur_chain_table = ct;
+      }
+
+      // reclaimable chain table top entry
+      if (reclaim_chain_table == NULL) {
+        reclaim_chain_table = ct;
       }
 
       num_chains++;
@@ -576,6 +601,11 @@ try:
         cur_chain_table_ex->next = ct;
         cur_chain_table_ex = ct;
       }
+      
+      // reclaimable chain table top entry
+      if (reclaim_chain_table_ex == NULL) {
+        reclaim_chain_table_ex = ct;
+      }
 
       num_chains++;
 
@@ -583,7 +613,7 @@ try:
 
     // check shift key to exit
     if (B_SFTSNS() & 0x01) {
-      printf("\r\x1b[KCanceled.\n");
+      B_PRINT("\r\x1b[KCanceled.\r\n");
       goto exit;
     }
 
@@ -592,10 +622,13 @@ try:
   // display mp3 frequency and channels (we cannot get this before any frame data decoding)
   int32_t pcm_freq = mp3_decoder.mp3_sample_rate;
   int16_t pcm_channels = mp3_decoder.mp3_channels;
-  printf("\r\x1b[0K\x1bM");
+  B_PRINT("\r\x1b[0K\x1bM");
   if (first_play) {
-    printf("MP3 frequency : %d [Hz]\n", mp3_decoder.mp3_sample_rate);
-    printf("MP3 channels  : %s\n", mp3_decoder.mp3_channels == 1 ? "mono" : "stereo");
+    uint8_t mes[256];
+    sprintf(mes, "MP3 frequency : %d [Hz]\r\n", mp3_decoder.mp3_sample_rate);
+    B_PRINT(mes);
+    sprintf(mes, "MP3 channels  : %s\r\n", mp3_decoder.mp3_channels == 1 ? "mono" : "stereo");
+    B_PRINT(mes);
     first_play = 0;
   }
 
@@ -641,7 +674,7 @@ try:
 
   }
 
-  printf("\nNow playing ... push [ESC]/[Q] key to quit. [SPACE] to pause.\x1b[0K\n");
+  B_PRINT("\r\nNow playing ... push [ESC]/[Q] key to quit. [SPACE] to pause.\x1b[0K\r\n");
   int16_t paused = 0;
 
   // dummy wait to make sure DMAC start (200 msec)
@@ -688,7 +721,9 @@ try:
           break;
         } else {
           // in case playback is stopped but not reached to the end, buffer underrun is observed.
-          printf("\n%s\n", cp932rsc_buffer_underrun);
+          uint8_t mes[256];
+          sprintf(mes, "\r\n%s\r\n", cp932rsc_buffer_underrun);
+          B_PRINT(mes);
         }
       }
     }
@@ -758,6 +793,11 @@ try:
         int16_t dt = num_chains - block_counter;
         if (dt >= buffer_delta) {
           if (!quiet_mode) B_PRINT(">");
+          if (reclaim_chain_table->buffer != NULL) {    // reclaim buffer memory
+            himem_free(reclaim_chain_table->buffer);
+            reclaim_chain_table->buffer = NULL;
+            reclaim_chain_table = reclaim_chain_table->next;
+          }
         } else {
           if (!quiet_mode) B_PRINT("*");
           buffer_delta = dt;
@@ -823,6 +863,11 @@ try:
         int16_t dt = num_chains - (block_counter_ofs + pcm8pp_get_block_counter(0));
         if (dt >= buffer_delta) {
           if (!quiet_mode) B_PRINT(">");
+          if (reclaim_chain_table_ex->buffer != NULL) {    // reclaim buffer memory
+            himem_free(reclaim_chain_table_ex->buffer);
+            reclaim_chain_table_ex->buffer = NULL;
+            reclaim_chain_table_ex = reclaim_chain_table_ex->next;
+          }
         } else {
           if (!quiet_mode) B_PRINT("*");
           buffer_delta = dt;
@@ -869,9 +914,9 @@ catch:
   for (int32_t t0 = ONTIME(); ONTIME() < t0 + 20;) {}
 
   // close input file if still opened
-  if (fp != NULL) {
-    fclose(fp);
-    fp = NULL;
+  if (fd != -1) {
+    CLOSE(fd);
+    fd = -1;
   }
 
   // reclaim file read buffers
@@ -879,6 +924,7 @@ catch:
     free(fread_staging_buffer);
     fread_staging_buffer = NULL;
   }
+
   if (fread_buffer != NULL) {
     himem_free(fread_buffer);
     fread_buffer = NULL;
@@ -893,6 +939,7 @@ catch:
     while (rct != NULL) {
       if (rct->buffer != NULL) {
         himem_free(rct->buffer);
+        rct->buffer = NULL;
       }
       CHAIN_TABLE* pre_rct = rct;
       rct = rct->next;
@@ -907,6 +954,7 @@ catch:
     while (rct != NULL) {
       if (rct->buffer != NULL) {
         himem_free(rct->buffer);
+        rct->buffer = NULL;
       }
       CHAIN_TABLE_EX* pre_rct = rct;
       rct = rct->next;
@@ -936,18 +984,7 @@ exit:
   // screen clear
   if (pic_brightness > 0) {
 
-    SCROLL(0, 0, 0);
-    SCROLL(1, 0, 0);
-    SCROLL(2, 0, 0);
-    SCROLL(3, 0, 0);
-
-    struct TXFILLPTR txfil = { 2, 0, 0, 768, 512, 0x0000 };
-    TXFILL(&txfil);
-
-    TPALET2(4,-2);
-    TPALET2(5,-2);
-    TPALET2(6,-2);
-    TPALET2(7,-2);
+    jpeg_reset_text_masks();
 
     C_CLS_AL();
     G_CLR_ON();
@@ -970,7 +1007,9 @@ exit:
 
   // print error message
   if (error_mes[0] != '\0') {
-    printf("error: %s\n", error_mes);
+    uint8_t mes[256];
+    sprintf(mes, "error: %s\r\n", error_mes);
+    B_PRINT(mes);
   }
 
   return rc;

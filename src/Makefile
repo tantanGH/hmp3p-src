@@ -30,28 +30,31 @@ HAS2GAS = python3 has2gas.py
 # ヘッダ検索パス
 INCLUDE_FLAGS = -I${ELF2X68K_DIR}/lib/gcc/m68k-elf/13.4.0/include \
 				-I${ELF2X68K_DIR}/m68k-elf/include \
+				-I../libs/libj/include \
 				-I../libs/libutf16/include \
 				-I../libs/libhimem/include \
 				-I../libs/libpcm8a/include \
 				-I../libs/libpcm8pp/include \
+				-I../libs/libjpeg/include \
 				-I../libs/libmad-x68k/include
 
 # ライブラリ検索パス
-LDFLAGS = -L../libs/libutf16/lib -L../libs/libhimem/lib -L../libs/libpcm8a/lib -L../libs/libpcm8pp/lib -L../libs/libmad-x68k/lib
+LDFLAGS = -L../libs/libj/lib -L../libs/libutf16/lib -L../libs/libhimem/lib -L../libs/libpcm8a/lib -L../libs/libpcm8pp/lib \
+		  -L../libs/libjpeg/lib -L../libs/libmad-x68k/lib
 
 # *.c ソースファイル
-C_SRCS = crtc.c picojpeg.c jpeg_decode.c mp3_decode.c main.c
+C_SRCS = mp3_decode.c main.c
 
 # *.s ソースファイル
 ASM_SRCS = cp932rsc.s
 
 # *.h source files
-HEADER_SRCS = cp932rsc.h crtc.h picojpeg.h jpeg_decode.h mp3_decode.h hmp3p.h
+HEADER_SRCS = cp932rsc.h mp3_decode.h hmp3p.h
 
 # リンク対象のライブラリファイル
-LIBS_000 = -ldos -liocs -lutf16 -lhimem -lpcm8a -lpcm8pp -lmad
-LIBS_030 = -ldos -liocs -lutf16 -lhimem -lpcm8a -lpcm8pp -lmad030
-LIBS_060 = -ldos -liocs -lutf16 -lhimem -lpcm8a -lpcm8pp -lmad060
+LIBS_000 = -ldos -liocs -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpeg -lmadhm
+LIBS_030 = -ldos -liocs -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpeg -lmad030hm
+LIBS_060 = -ldos -liocs -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpeg -lmad060hm
 
 # 中間ファイル生成用ディレクトリ
 INTERMEDIATE_DIR_000 = _build000/elf2x68k
@@ -67,7 +70,7 @@ OBJS_060 =	$(addprefix $(INTERMEDIATE_DIR_060)/,$(patsubst %.c,%.o,$(C_SRCS))) \
 	    	$(addprefix $(INTERMEDIATE_DIR_060)/,$(patsubst %.s,%.o,$(ASM_SRCS)))
 
 # コンパイルフラグ
-COMMON_FLAGS_000 = -m68000 -O3 -msoft-float \
+COMMON_FLAGS_000 = -m68000 -O3 -msoft-float -specs=nano.specs \
 					-fomit-frame-pointer \
 					-finline-functions -finline-limit=10000 \
 					-funroll-loops -fpeel-loops \
@@ -75,7 +78,7 @@ COMMON_FLAGS_000 = -m68000 -O3 -msoft-float \
 					$(INCLUDE_FLAGS)
 CFLAGS_000 = $(COMMON_FLAGS_000) -D__OPT_X68K_16BIT_PCM_DIRECT__
 
-COMMON_FLAGS_030 = -m68030 -O3 -msoft-float \
+COMMON_FLAGS_030 = -m68030 -O3 -msoft-float -specs=nano.specs \
 					-fomit-frame-pointer \
 					-finline-functions -finline-limit=10000 \
 					-funroll-loops -fpeel-loops \
@@ -83,9 +86,9 @@ COMMON_FLAGS_030 = -m68030 -O3 -msoft-float \
 					$(INCLUDE_FLAGS)
 CFLAGS_030 = $(COMMON_FLAGS_030) -D__OPT_X68K_16BIT_PCM_DIRECT__
 
-COMMON_FLAGS_060 = -m68060 -O3 -msoft-float \
-					-fomit-frame-pointer \
-					-finline-functions -finline-limit=10000 \
+COMMON_FLAGS_060 = -m68060 -Os -msoft-float -specs=nano.specs \
+					-fomit-frame-pointer -fstrict-aliasing \
+					-finline-functions -finline-limit=5000 \
     				-fno-unroll-loops -fno-peel-loops -fno-builtin \
 					-falign-functions=16 \
 					$(INCLUDE_FLAGS)

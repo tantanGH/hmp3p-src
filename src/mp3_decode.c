@@ -2,9 +2,10 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <doslib.h>
 #include <himem.h>
+#include <jpeg.h>
 #include <utf16_cp932.h>
-#include "jpeg_decode.h"
 #include "mp3_decode.h"
 
 #ifdef __VERBOSE__
@@ -54,11 +55,11 @@ static inline int16_t scale_12bit(mad_fixed_t sample) {
 //
 //  parse ID3v2 tags
 //
-int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness, int16_t pic_half_size, FILE* fp) {
+int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness, int16_t pic_half_size, int32_t fd) {
 
   // read the first 10 bytes of the MP3 file
   uint8_t mp3_header[10];
-  size_t ret = fread(mp3_header, 1, 10, fp);
+  size_t ret = READ(fd, mp3_header, 10);
   if (ret != 10) {
     printf("error: cannot read mp3 file.\n");
     return -1;
@@ -82,11 +83,11 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
   // skip extended ID3v2 header
   if (mp3_header[5] & (1<<6)) {
     uint8_t ext_header[6];
-    fread(ext_header, 1, 6, fp);
+    READ(fd, ext_header, 6);
     uint32_t ext_header_size = id3v2_version == 0x03 ? *((uint32_t*)(ext_header + 0)) :
                                 ((ext_header[0] & 0x7f) << 21) | ((ext_header[1] & 0x7f) << 14) |
                                 ((ext_header[2] & 0x7f) << 7)  | (ext_header[3] & 0x7f);
-    fseek(fp, ext_header_size, SEEK_CUR);
+    SEEK(fd, ext_header_size, 1);
     total_tag_size -= 6 + ext_header_size;
   }
 
@@ -97,7 +98,7 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
 
   while ((ofs + 10) < total_tag_size) {
 
-    fread(frame_header, 1, 10, fp);
+    READ(fd, frame_header, 10);
 
     uint32_t frame_size = (id3v2_version == 0x03) ? *((uint32_t*)(frame_header + 4)) :
                             ((frame_header[4] & 0x7f) << 21) | ((frame_header[5] & 0x7f) << 14) |
@@ -118,7 +119,7 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
 
       // title
       uint8_t* frame_data = malloc(frame_size);
-      fread(frame_data, 1, frame_size, fp);
+      READ(fd, frame_data, frame_size);
       if (frame_data[0] == 0x00) {              // ISO-8859-1
         decode->mp3_title = malloc(frame_size - 1 + 1);
         memcpy(decode->mp3_title, frame_data + 1, frame_size - 1);
@@ -134,7 +135,7 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
 
       // artist
       uint8_t* frame_data = malloc(frame_size);
-      fread(frame_data, 1, frame_size, fp);
+      READ(fd, frame_data, frame_size);
 
       if (frame_data[0] == 0x00) {              // ISO-8859-1
         decode->mp3_artist = malloc(frame_size - 1 + 1);
@@ -151,7 +152,7 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
 
       // album
       uint8_t* frame_data = malloc(frame_size);
-      fread(frame_data, 1, frame_size, fp);
+      READ(fd, frame_data, frame_size);
 
       if (frame_data[0] == 0x00) {              // ISO-8859-1
         decode->mp3_album = malloc(frame_size - 1 + 1);
@@ -170,7 +171,7 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
 
       // album art
       uint8_t* frame_data = malloc(frame_size);
-      fread(frame_data, 1, frame_size, fp);
+      READ(fd, frame_data, frame_size);
 
       uint8_t* mime = frame_data+1;
       uint8_t* desc = mime + strlen(mime) + 1 + 1;
@@ -180,12 +181,12 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
       if (pic_data[0] == 0xff && pic_data[1] == 0xd8) {
 //        printf("found JPEG.\n");
         // jpeg
-        JPEG_DECODE_HANDLE jpeg_decode;
-        jpeg_decode_init(&jpeg_decode, pic_brightness, pic_half_size);
-        if (jpeg_decode_exec(&jpeg_decode, pic_data, pic_data_len) != 0) {
+        JPEG jpg;
+        jpeg_open(&jpg, pic_brightness);
+        if (jpeg_draw(&jpg, pic_data, pic_data_len, 0) != 0) {
 //          printf("unsupported jpeg artwork format. (progressive JPEG?)\n");
         }
-        jpeg_decode_close(&jpeg_decode);
+        jpeg_close(&jpg);
 
 //      } else if (pic_data[0] == 0x89 && pic_data[1] == 0x50) {
 //        // png
@@ -199,7 +200,7 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
 
     } else {
       // other tags
-      fseek(fp, frame_size, SEEK_CUR);
+      SEEK(fd, frame_size, 1);
     }
 
     ofs += 10 + frame_size;
@@ -255,19 +256,21 @@ void mp3_decode_close(MP3_DECODE_HANDLE* decode) {
     himem_free(decode->resample_src_buffer);
     decode->resample_src_buffer = NULL;
   }
+
   if (decode->mp3_title != NULL) {
     free(decode->mp3_title);
     decode->mp3_title = NULL;
   }
+
   if (decode->mp3_artist != NULL) {
     free(decode->mp3_artist);
     decode->mp3_artist = NULL;
   }
+
   if (decode->mp3_album != NULL) {
     free(decode->mp3_album);
     decode->mp3_album = NULL;
   }
-
 }
 
 //
@@ -298,26 +301,6 @@ int32_t mp3_decode_setup(MP3_DECODE_HANDLE* decode, void* mp3_data, size_t mp3_d
   mad_frame_init(&(decode->mad_frame));
   mad_synth_init(&(decode->mad_synth));
 //  mad_timer_reset(&(decode->mad_timer));
-
-  /* allocate Layer III dynamic structures */
-
-  if (decode->mad_stream.main_data == NULL) {
-    //stream->main_data = malloc(MAD_BUFFER_MDLEN);
-    decode->mad_stream.main_data = himem_malloc(MAD_BUFFER_MDLEN);
-    if (decode->mad_stream.main_data == NULL) {
-      rc = -1;
-      goto exit;
-    }
-  }
-
-  if (decode->mad_frame.overlap == NULL) {
-    //frame->overlap = calloc(2 * 32 * 18, sizeof(mad_fixed_t));
-    decode->mad_frame.overlap = himem_calloc(2 * 32 * 18, sizeof(mad_fixed_t));
-    if (decode->mad_frame.overlap == NULL) {
-      rc = -1;
-      goto exit;
-    }
-  }
 
   mad_stream_buffer(&(decode->mad_stream), mp3_data, mp3_data_len);
 
