@@ -3,8 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <jstring.h>
-#include <doslib.h>
-#include <iocslib.h>
+#include <x68k/dos.h>
+#include <x68k/iocs.h>
 
 // himem
 #include <himem.h>
@@ -31,8 +31,8 @@
 //
 //  abort vectors
 //
-static uint32_t g_abort_vector1;
-static uint32_t g_abort_vector2;
+static void* g_abort_vector1;
+static void* g_abort_vector2;
 
 //
 //  chain table top
@@ -54,11 +54,11 @@ static uint32_t g_original_pcm8pp_max_channels = 0;
 //
 //  abort vector handler
 //
-static void abort_application() {
+static __attribute__((interrupt)) void abort_application() {
 
   // resume abort vectors
-  INTVCS(0xFFF1, (int8_t*)g_abort_vector1);
-  INTVCS(0xFFF2, (int8_t*)g_abort_vector2);  
+  _dos_intvcs(0xFFF1, g_abort_vector1);
+  _dos_intvcs(0xFFF2, g_abort_vector2);  
 
   // stop pcm8a
   if (pcm8a_isavailable()) {
@@ -105,17 +105,17 @@ static void abort_application() {
   }
 
   // cursor on
-  C_CURON();
+  _dos_c_curon();
 
   // funckey mode
   if (g_funckey_mode >= 0) {
-    C_FNKMOD(g_funckey_mode);
+    _dos_c_fnkmod(g_funckey_mode);
   }
   
   // flush key buffer
-  KFLUSHIO(0xff);
+  _dos_kflushio(0xff);
 
-  B_PRINT("Aborted.\r\n");
+  _iocs_b_print("Aborted.\r\n");
 
   exit(1);
 }
@@ -127,15 +127,15 @@ static int32_t get_mpu_type() {
 
   int32_t mpu_type = 0;
 
-  uint32_t rom_version = ((uint32_t)ROMVER()) >> 24;
+  uint32_t rom_version = ((uint32_t)_iocs_romver()) >> 24;
   if (rom_version <= 0x12) goto exit;
 
-  struct REGS in_regs = { 0 };
-  struct REGS out_regs = { 0 };
+  struct iocs_regs in_regs = { 0 };
+  struct iocs_regs out_regs = { 0 };
 
   in_regs.d0 = 0xac;      // IOCS _SYS_STAT
 
-  TRAP15(&in_regs, &out_regs);
+  _iocs_trap15(&in_regs, &out_regs);
 
   mpu_type = out_regs.d0 & 0xff;
 
@@ -185,19 +185,19 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   int32_t num_chains = 0;
 
   // exit error message
-  uint8_t error_mes[ 256 ];
+  static uint8_t error_mes[ 256 ];
   error_mes[0] = '\0';
 
   // mp3 raw file name
-  uint8_t mp3_file_name[ MAX_PATH_LEN ];
+  static uint8_t mp3_file_name[ MAX_PATH_LEN ];
   mp3_file_name[0] = '\0';
   
   // preserve abort vectors
-  g_abort_vector1 = INTVCS(0xFFF1, (int8_t*)abort_application);
-  g_abort_vector2 = INTVCS(0xFFF2, (int8_t*)abort_application);  
+  g_abort_vector1 = _dos_intvcs(0xFFF1, (void*)abort_application);
+  g_abort_vector2 = _dos_intvcs(0xFFF2, (void*)abort_application);  
 
   // preserve function key mode
-  g_funckey_mode = C_FNKMOD(-1);
+  g_funckey_mode = _dos_c_fnkmod(-1);
 
   // check mpu type
 #ifdef __mc68060__
@@ -261,9 +261,9 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
       }
       if (argv[i][0] == '"' || argv[i][0] == '\'') {
         // detected filename quotation
-        struct PDBADR* pdb = GETPDB();
-        uint8_t* q0 = jstrchr((uint8_t*)(pdb->comline),argv[i][0]);
-        uint8_t* q1 = jstrrchr((uint8_t*)(pdb->comline),argv[i][0]);
+        struct dos_psp* psp = _dos_getpdb();
+        uint8_t* q0 = jstrchr((uint8_t*)(psp->comline),argv[i][0]);
+        uint8_t* q1 = jstrrchr((uint8_t*)(psp->comline),argv[i][0]);
         if (q0 < q1) {
           memcpy(mp3_file_name, q0 + 1, q1 - q0 - 1);
           mp3_file_name[q1 - q0 - 1] = '\0';
@@ -315,7 +315,7 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
 
   // credit
   if (pic_brightness == 0) {
-    B_PRINT("HMP3P.X - High Memory MP3 player for X680x0 version " VERSION " by tantan\n");
+    _iocs_b_print("HMP3P.X - High Memory MP3 player for X680x0 version " VERSION " by tantan\n");
   }
 
   // reset PCM8A/PCM8PP
@@ -328,7 +328,7 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   }
 
   // cursor off
-  C_CUROFF();
+  _dos_c_curoff();
 
   // display mp3 attribute at first play
   int16_t first_play = 1;
@@ -337,14 +337,10 @@ loop:
 
   // init crtc if album art is required
   if (pic_brightness > 0) {
-
     jpeg_crtmod_768x512_65536();
-
-    C_FNKMOD(3);    // function key display off
-    C_CLS_AL();
-
+    _dos_c_fnkmod(3);     // function key display off
+    _dos_c_cls_al();
     jpeg_fill_text_masks();
-
   }
 
   // current chain table entries
@@ -361,7 +357,6 @@ loop:
   // file read buffers
   void* fread_buffer = NULL;
   void* fread_staging_buffer = NULL;
-  //FILE* fp = NULL;
   int32_t fd = -1;
 
 try:
@@ -374,7 +369,7 @@ try:
   }
 
   // open input file
-  fd = OPEN(mp3_file_name, 0);
+  fd = _dos_open(mp3_file_name, 0);
   if (fd < 0) {
     strcpy(error_mes, cp932rsc_file_open_error);
     goto catch;
@@ -395,8 +390,8 @@ try:
   }
 
   // obtain data content size
-  uint32_t mp3_data_size = SEEK(fd, 0, 2) - skip_offset;
-  SEEK(fd, skip_offset, 0);
+  uint32_t mp3_data_size = _dos_seek(fd, 0, 2) - skip_offset;
+  _dos_seek(fd, skip_offset, 0);
 
   // allocate file read buffer
   size_t fread_buffer_len = mp3_data_size;
@@ -409,7 +404,7 @@ try:
   // read whole mp3 file content into high memory
   if (staging_file_read) {
     // use staging buffer on main memory (for SCSI disk)
-    B_PRINT("\rLoading MP3 file...\x1b[0K");
+    _iocs_b_print(cp932rsc_now_loading);
     fread_staging_buffer = malloc(FREAD_STAGING_BUFFER_BYTES);   // allocate in main memory
     if (fread_staging_buffer == NULL) {
       strcpy(error_mes, cp932rsc_mainmem_shortage);
@@ -417,23 +412,23 @@ try:
     }    
     size_t read_len = 0; 
     do {
-      size_t len = READ(fd, fread_staging_buffer, FREAD_STAGING_BUFFER_BYTES);
+      size_t len = _dos_read(fd, fread_staging_buffer, FREAD_STAGING_BUFFER_BYTES);
       memcpy(fread_buffer + read_len, fread_staging_buffer, len);
       read_len += len;
     } while (read_len < mp3_data_size);
     free(fread_staging_buffer);
     fread_staging_buffer = NULL;
-    B_PRINT("\r\x1b[0K");
+    _iocs_b_print(cp932rsc_erase_line);
   } else {
     // direct load to high memory from VDISK/WindrvXM
     size_t read_len = 0; 
     do {
       size_t read_size = (mp3_data_size - read_len) < FREAD_CHUNK_BYTES ? (mp3_data_size - read_len) : FREAD_CHUNK_BYTES;
-      size_t len = READ(fd, fread_buffer + read_len, read_size);
+      size_t len = _dos_read(fd, fread_buffer + read_len, read_size);
       read_len += len;
     } while (read_len < mp3_data_size);
   }
-  CLOSE(fd);
+  _dos_close(fd);
   fd = -1;
 
   // setup mp3 decoder
@@ -445,41 +440,41 @@ try:
   // describe mp3 attributes
   if (first_play || pic_brightness > 0) {
 
-    uint8_t mes[256];
+    static uint8_t mes[256];
 
-    B_PRINT("\r\n");
+    _iocs_b_print(cp932rsc_crlf);
 
-    sprintf(mes, "File name     : %s\r\n", mp3_file_name);
-    B_PRINT(mes);
-    sprintf(mes, "Data size     : %d [bytes]\r\n", mp3_data_size);
-    B_PRINT(mes);
-    sprintf(mes, "Data format   : %s\r\n", "MP3");
-    B_PRINT(mes);
+    sprintf(mes, cp932rsc_mp3_file_name, mp3_file_name);
+    _iocs_b_print(mes);
+    sprintf(mes, cp932rsc_mp3_data_size, mp3_data_size);
+    _iocs_b_print(mes);
+    sprintf(mes, cp932rsc_mp3_data_format, "MP3");
+    _iocs_b_print(mes);
 
     // describe playback drivers
-    sprintf(mes, "PCM driver    : %s (volume:%d)\r\n", 
+    sprintf(mes, cp932rsc_pcm_driver, 
               playback_driver == DRIVER_PCM8PP ? "PCM8PP" : 
               playback_driver == DRIVER_PCM8A  ? "PCM8A"  : "-", 
               playback_volume);
-    B_PRINT(mes);
+    _iocs_b_print(mes);
 
-    sprintf(mes, "MP3 quality   : %s\r\n", mp3_quality == 1 ? "normal" : "high");
-    B_PRINT(mes);
+    sprintf(mes, cp932rsc_mp3_quality, mp3_quality == 1 ? "normal" : "high");
+    _iocs_b_print(mes);
 
     if (mp3_decoder.mp3_title != NULL) {
-      sprintf(mes, "MP3 title     : %s\r\n", mp3_decoder.mp3_title);
-      B_PRINT(mes);
+      sprintf(mes, cp932rsc_mp3_title, mp3_decoder.mp3_title);
+      _iocs_b_print(mes);
     }
     if (mp3_decoder.mp3_artist != NULL) {
-      sprintf(mes, "MP3 artist    : %s\r\n", mp3_decoder.mp3_artist);
-      B_PRINT(mes);
+      sprintf(mes, cp932rsc_mp3_artist, mp3_decoder.mp3_artist);
+      _iocs_b_print(mes);
     }
     if (mp3_decoder.mp3_album != NULL) {
-      sprintf(mes, "MP3 album     : %s\r\n", mp3_decoder.mp3_album);
-      B_PRINT(mes);
+      sprintf(mes, cp932rsc_mp3_album, mp3_decoder.mp3_album);
+      _iocs_b_print(mes);
     }
 
-    B_PRINT("\r\n");
+    _iocs_b_print(cp932rsc_crlf);
 
     //first_play = 0;
   }
@@ -490,9 +485,9 @@ try:
 
     if (end_flag) break;
 
-    uint8_t mes[256];
-    sprintf(mes,"\rNow buffering (%d/%d) ... [SHIFT] key to cancel.", i+1, num_buffers);
-    B_PRINT(mes);
+    static uint8_t mes[256];
+    sprintf(mes, cp932rsc_now_buffering, i+1, num_buffers);
+    _iocs_b_print(mes);
 
     if (playback_driver == DRIVER_PCM8A) {
 
@@ -613,23 +608,23 @@ try:
     }
 
     // check shift key to exit
-    if (B_SFTSNS() & 0x01) {
-      B_PRINT("\r\x1b[KCanceled.\r\n");
+    if (_iocs_b_sftsns() & 0x01) {
+      _iocs_b_print(cp932rsc_canceled);
       goto exit;
     }
 
   }
-
+  
   // display mp3 frequency and channels (we cannot get this before any frame data decoding)
   int32_t pcm_freq = mp3_decoder.mp3_sample_rate;
   int16_t pcm_channels = mp3_decoder.mp3_channels;
-  B_PRINT("\r\x1b[0K\x1bM");
+  _iocs_b_print(cp932rsc_erase_line_and_up);
   if (first_play) {
-    uint8_t mes[256];
-    sprintf(mes, "MP3 frequency : %d [Hz]\r\n", mp3_decoder.mp3_sample_rate);
-    B_PRINT(mes);
-    sprintf(mes, "MP3 channels  : %s\r\n", mp3_decoder.mp3_channels == 1 ? "mono" : "stereo");
-    B_PRINT(mes);
+    static uint8_t mes[256];
+    sprintf(mes, cp932rsc_mp3_frequency, mp3_decoder.mp3_sample_rate);
+    _iocs_b_print(mes);
+    sprintf(mes, cp932rsc_mp3_channels, mp3_decoder.mp3_channels == 1 ? "mono" : "stereo");
+    _iocs_b_print(mes);
     first_play = 0;
   }
 
@@ -675,64 +670,56 @@ try:
 
   }
 
-  B_PRINT("\r\nNow playing ... push [ESC]/[Q] key to quit. [SPACE] to pause.\x1b[0K\r\n");
+  _iocs_b_print(cp932rsc_now_playing);
   int16_t paused = 0;
 
   // dummy wait to make sure DMAC start (200 msec)
-  for (int32_t t0 = ONTIME(); ONTIME() < t0 + 20;) {}
+  for (int32_t t0 = (_iocs_ontime()).sec; (_iocs_ontime()).sec < t0 + 20;) {}
 
   int32_t block_counter_ofs = 0;
   int16_t buffer_delta = num_buffers;
 
-  for (;;) {
+  // main loop for pcm8a
+  if (playback_driver == DRIVER_PCM8A) {
+
+    for (;;) {
    
-    // check esc key to exit, space key to pause
-    if (B_KEYSNS() != 0) {
-      int16_t scan_code = B_KEYINP() >> 8;
-      if (scan_code == KEY_SCAN_CODE_ESC || scan_code == KEY_SCAN_CODE_Q) {
-        B_PRINT("\r\nStopped.");
-        rc = 1;
-        break;
-      } else if (scan_code == KEY_SCAN_CODE_SPACE) {
-        if (paused) {
-          if (playback_driver == DRIVER_PCM8A) {
-            pcm8a_resume();
-          } else if (playback_driver == DRIVER_PCM8PP) {
-            pcm8pp_resume();
-          }
-          paused = 0;
-        } else {
-          if (playback_driver == DRIVER_PCM8A) {
-            pcm8a_pause();
-          } else if (playback_driver == DRIVER_PCM8PP) {
-            pcm8pp_pause();
-          }
-          paused = 1;
-        }
-      }
-    }
-
-    // exit if not playing
-    if (!paused) {
-      if ((playback_driver == DRIVER_PCM8A  && pcm8a_get_data_length(0)  == 0) ||
-          (playback_driver == DRIVER_PCM8PP && pcm8pp_get_data_length(0) == 0)) {
-        if (end_flag) { 
-          B_PRINT("\r\nFinished.\r\n");
-          rc = 0;
+      // check esc key to exit, space key to pause
+      if (_iocs_b_keysns() != 0) {
+        int16_t scan_code = (_iocs_b_keyinp() >> 8);
+        if (scan_code == KEY_SCAN_CODE_ESC || scan_code == KEY_SCAN_CODE_Q) {
+          _iocs_b_print(cp932rsc_stopped);
+          rc = 1;
           break;
-        } else {
-          // in case playback is stopped but not reached to the end, buffer underrun is observed.
-          uint8_t mes[256];
-          sprintf(mes, "\r\n%s\r\n", cp932rsc_buffer_underrun);
-          B_PRINT(mes);
+        } else if (scan_code == KEY_SCAN_CODE_SPACE) {
+          if (paused) {
+            pcm8a_resume();
+            paused = 0;
+          } else {
+            pcm8a_pause();
+            paused = 1;
+          }
         }
       }
-    }
 
-    // decode additional data
-    if (!end_flag) {
+      // exit if not playing
+      if (!paused) {
+        if (pcm8a_get_data_length(0)  == 0) {
+          if (end_flag) { 
+            _iocs_b_print(cp932rsc_finished);
+            rc = 0;
+            break;
+          } else {
+            // in case playback is stopped but not reached to the end, buffer underrun is observed.
+            _iocs_b_print(cp932rsc_crlf);
+            _iocs_b_print(cp932rsc_buffer_underrun);
+            _iocs_b_print(cp932rsc_crlf);
+          }
+        }
+      }
 
-      if (playback_driver == DRIVER_PCM8A) {
+      // decode additional data
+      if (!end_flag) {
 
         // allocate the next chain table entry
         CHAIN_TABLE* ct = (CHAIN_TABLE*)himem_malloc(sizeof(CHAIN_TABLE));
@@ -763,7 +750,7 @@ try:
           himem_free(ct->buffer);
           himem_free(ct);
           end_flag = 1;
-          if (!quiet_mode) B_PRINT("|");
+          if (!quiet_mode) _iocs_b_print(cp932rsc_progress_last);
           continue;
         }
 
@@ -793,7 +780,7 @@ try:
 
         int32_t dt = num_chains - block_counter;
         if (dt >= buffer_delta) {
-          if (!quiet_mode) B_PRINT(">");
+          if (!quiet_mode) _iocs_b_print(cp932rsc_progress_normal);
           if (reclaim_block_counter < block_counter && reclaim_chain_table->buffer != NULL) {    // reclaim buffer memory
             himem_free(reclaim_chain_table->buffer);
             reclaim_chain_table->buffer = NULL;
@@ -801,7 +788,7 @@ try:
             reclaim_block_counter = block_counter;
           }
         } else {
-          if (!quiet_mode) B_PRINT("*");
+          if (!quiet_mode) _iocs_b_print(cp932rsc_progress_under);
           buffer_delta = dt;
         }
 
@@ -814,9 +801,52 @@ try:
             }
           }
         }
+  
+      }
+    }
+  }
+
+  // main loop for pcm8pp
+  if (playback_driver == DRIVER_PCM8PP) {
+
+    for (;;) {
+   
+      // check esc key to exit, space key to pause
+      if (_iocs_b_keysns() != 0) {
+        int16_t scan_code = (_iocs_b_keyinp() >> 8);
+        if (scan_code == KEY_SCAN_CODE_ESC || scan_code == KEY_SCAN_CODE_Q) {
+          _iocs_b_print(cp932rsc_stopped);
+          rc = 1;
+          break;
+        } else if (scan_code == KEY_SCAN_CODE_SPACE) {
+          if (paused) {
+            pcm8pp_resume();
+            paused = 0;
+          } else {
+            pcm8pp_pause();
+            paused = 1;
+          }
+        }
       }
 
-      if (playback_driver == DRIVER_PCM8PP) {
+      // exit if not playing
+      if (!paused) {
+        if (pcm8pp_get_data_length(0)  == 0) {
+          if (end_flag) { 
+            _iocs_b_print(cp932rsc_finished);
+            rc = 0;
+            break;
+          } else {
+            // in case playback is stopped but not reached to the end, buffer underrun is observed.
+            _iocs_b_print(cp932rsc_crlf);
+            _iocs_b_print(cp932rsc_buffer_underrun);
+            _iocs_b_print(cp932rsc_crlf);
+          }
+        }
+      }
+
+      // decode additional data
+      if (!end_flag) {
 
         // allocate the next chain table entry
         CHAIN_TABLE_EX* ct = (CHAIN_TABLE_EX*)himem_malloc(sizeof(CHAIN_TABLE_EX));
@@ -847,7 +877,7 @@ try:
           himem_free(ct->buffer);
           himem_free(ct);
           end_flag = 1;
-          if (!quiet_mode) B_PRINT("|");
+          if (!quiet_mode) _iocs_b_print(cp932rsc_progress_last);
           continue;
         }
 
@@ -865,7 +895,7 @@ try:
         int32_t block_counter = pcm8pp_get_block_counter(0);
         int32_t dt = num_chains - (block_counter_ofs + block_counter);
         if (dt >= buffer_delta) {
-          if (!quiet_mode) B_PRINT(">");
+          if (!quiet_mode) _iocs_b_print(cp932rsc_progress_normal);
           if (reclaim_block_counter < block_counter && reclaim_chain_table_ex->buffer != NULL) {    // reclaim buffer memory
             himem_free(reclaim_chain_table_ex->buffer);
             reclaim_chain_table_ex->buffer = NULL;
@@ -873,7 +903,7 @@ try:
             reclaim_block_counter = block_counter;
           }
         } else {
-          if (!quiet_mode) B_PRINT("*");
+          if (!quiet_mode) _iocs_b_print(cp932rsc_progress_under);
           buffer_delta = dt;
         }
 
@@ -915,11 +945,11 @@ catch:
   }
 
   // dummy wait to make sure DMAC stop (200 msec)
-  for (int32_t t0 = ONTIME(); ONTIME() < t0 + 20;) {}
+  for (int32_t t0 = (_iocs_ontime()).sec; (_iocs_ontime()).sec < t0 + 20;) {}
 
   // close input file if still opened
   if (fd != -1) {
-    CLOSE(fd);
+    _dos_close(fd);
     fd = -1;
   }
 
@@ -970,12 +1000,12 @@ catch:
   // loop check
   if (rc == 0) {
     if (loop_count == 0 || --loop_count > 0) {
-      B_PRINT("\r\n");
+      _iocs_b_print(cp932rsc_crlf);
       goto loop;
     }
   }
 
-  B_PRINT("\r\n");
+  _iocs_b_print(cp932rsc_crlf);
 
 exit:
 
@@ -987,33 +1017,31 @@ exit:
 
   // screen clear
   if (pic_brightness > 0) {
-
     jpeg_reset_text_masks();
-
-    C_CLS_AL();
-    G_CLR_ON();
+    _dos_c_cls_al();
+    _iocs_g_clr_on();
   }
 
   // cursor on
-  C_CURON();
+  _dos_c_curon();
 
   // function key mode
   if (g_funckey_mode >= 0) {
-    C_FNKMOD(g_funckey_mode);
+    _dos_c_fnkmod(g_funckey_mode);
   }
 
   // resume abort vectors
-  INTVCS(0xFFF1, (int8_t*)g_abort_vector1);
-  INTVCS(0xFFF2, (int8_t*)g_abort_vector2);  
+  _dos_intvcs(0xFFF1, g_abort_vector1);
+  _dos_intvcs(0xFFF2, g_abort_vector2);  
 
   // flush key buffer
-  KFLUSHIO(0xff);
+  _dos_kflushio(0xff);
 
   // print error message
   if (error_mes[0] != '\0') {
-    uint8_t mes[256];
-    sprintf(mes, "error: %s\r\n", error_mes);
-    B_PRINT(mes);
+    _iocs_b_print("error: ");
+    _iocs_b_print(error_mes);
+    _iocs_b_print(cp932rsc_crlf);
   }
 
   return rc;

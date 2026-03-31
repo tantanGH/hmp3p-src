@@ -38,23 +38,25 @@ INCLUDE_FLAGS = -I${ELF2X68K_DIR}/lib/gcc/m68k-elf/13.4.0/include \
 				-I../libs/libjpeg/include \
 				-I../libs/libmad-x68k/include
 
-# ライブラリ検索パス
-LDFLAGS = -L../libs/libj/lib -L../libs/libutf16/lib -L../libs/libhimem/lib -L../libs/libpcm8a/lib -L../libs/libpcm8pp/lib \
-		  -L../libs/libjpeg/lib -L../libs/libmad-x68k/lib
-
 # *.c ソースファイル
-C_SRCS = mp3_decode.c main.c
+C_SRCS = cp932rsc.c mp3_decode.c main.c
 
 # *.s ソースファイル
-ASM_SRCS = cp932rsc.s
+ASM_SRCS =
 
 # *.h source files
 HEADER_SRCS = cp932rsc.h mp3_decode.h hmp3p.h
 
+# リンカオプションおよびライブラリ検索パス
+LDFLAGS = -Wl,-s -Wl,--gc-sections \
+		  -L../libs/libj/lib -L../libs/libutf16/lib -L../libs/libhimem/lib \
+		  -L../libs/libpcm8a/lib -L../libs/libpcm8pp/lib \
+		  -L../libs/libjpeg/lib -L../libs/libmad-x68k/lib
+
 # リンク対象のライブラリファイル
-LIBS_000 = -ldos -liocs -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpeg -lmadhm
-LIBS_030 = -ldos -liocs -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpeg -lmad030hm
-LIBS_060 = -ldos -liocs -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpeg -lmad060hm
+LIBS_000 = -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpeg -lmadhm
+LIBS_030 = -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpeg -lmad030hm
+LIBS_060 = -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpeg -lmad060hm
 
 # 中間ファイル生成用ディレクトリ
 INTERMEDIATE_DIR_000 = _build000/elf2x68k
@@ -74,7 +76,7 @@ COMMON_FLAGS_000 = -m68000 -O3 -msoft-float -specs=nano.specs \
 					-fomit-frame-pointer \
 					-finline-functions -finline-limit=10000 \
 					-funroll-loops -fpeel-loops \
-					-falign-functions=4 -falign-loops=4 \
+					-falign-functions=4 -falign-loops=4 -falign-labels=4 \
 					$(INCLUDE_FLAGS)
 CFLAGS_000 = $(COMMON_FLAGS_000) -D__OPT_X68K_16BIT_PCM_DIRECT__
 
@@ -82,17 +84,17 @@ COMMON_FLAGS_030 = -m68030 -O3 -msoft-float -specs=nano.specs \
 					-fomit-frame-pointer \
 					-finline-functions -finline-limit=10000 \
 					-funroll-loops -fpeel-loops \
-					-falign-functions=16 -falign-loops=16 \
+					-falign-functions=16 -falign-loops=4 -falign-labels=4 \
 					$(INCLUDE_FLAGS)
 CFLAGS_030 = $(COMMON_FLAGS_030) -D__OPT_X68K_16BIT_PCM_DIRECT__
 
 COMMON_FLAGS_060 = -m68060 -Os -msoft-float -specs=nano.specs \
 					-fomit-frame-pointer -fstrict-aliasing \
-					-finline-functions -finline-limit=5000 \
-    				-fno-unroll-loops -fno-peel-loops -fno-builtin \
-					-falign-functions=16 \
+					-finline-functions -finline-limit=500 \
+    				-fno-unroll-loops -fno-peel-loops \
+					-falign-functions=16 -falign-loops=4 -falign-labels=4 \
 					$(INCLUDE_FLAGS)
-CFLAGS_060 = $(COMMON_FLAGS_060) -D__OPT_X68K_16BIT_PCM_DIRECT__ -D__VERBOSE__
+CFLAGS_060 = $(COMMON_FLAGS_060) -D__OPT_X68K_16BIT_PCM_DIRECT__
 
 # デフォルトのターゲット
 all : 000 030 060
