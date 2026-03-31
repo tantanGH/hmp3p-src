@@ -12,6 +12,7 @@
 #include <iocslib.h>
 #endif
 
+#ifndef __OPT_X68K_16BIT_PCM_DIRECT__
 //
 //  inline helper: 24bit signed int to 16bit signed int
 //
@@ -51,6 +52,7 @@ static inline int16_t scale_12bit(mad_fixed_t sample) {
   // quantize
   return sample >> (MAD_F_FRACBITS + 1 - 12);
 }
+#endif
 
 //
 //  parse ID3v2 tags
@@ -167,8 +169,6 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
 
     } else if (pic_brightness > 0 && memcmp(frame_header, "APIC", 4) == 0) {
 
-//      printf("found APIC.\n");
-
       // album art
       uint8_t* frame_data = malloc(frame_size);
       READ(fd, frame_data, frame_size);
@@ -179,7 +179,7 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
       uint32_t pic_data_len = frame_size - (pic_data - frame_data);
 
       if (pic_data[0] == 0xff && pic_data[1] == 0xd8) {
-//        printf("found JPEG.\n");
+
         // jpeg
         JPEG jpg;
         jpeg_open(&jpg, pic_brightness);
@@ -432,10 +432,10 @@ exit:
 
 #ifdef __VERBOSE2__
   uint32_t t1 = ONTIME();
-  printf("%4.2f samples/sec (%d,%d)\n",decode_ofs * 100.0 / 2.0 / (t1 - t0),tf,ts);
+  printf("%d samples/sec (%d,%d)\n",(int32_t)(decode_ofs * 100.0 / 2.0 / (t1 - t0)),tf,ts);
 #elif __VERBOSE__
   uint32_t t1 = ONTIME();
-  printf("%4.2f samples/sec\n",decode_ofs * 100.0 / 2.0 / (t1 - t0));
+  printf("%d samples/sec\n",(int32_t)(decode_ofs * 100.0 / 2.0 / (t1 - t0)));
 #endif
 
   return rc;

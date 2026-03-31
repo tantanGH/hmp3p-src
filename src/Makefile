@@ -15,7 +15,7 @@ TARGET_FILE_030 = HMP3P030.X
 TARGET_FILE_060 = HMP3P060.X
 
 # ドキュメントファイル名
-DOCUMENT_FILE = HMP3P.DOC
+DOCUMENT_FILE = HMP3P.TXT
 
 # 配布パッケージファイル名 
 PACKAGE_FILE = ../HMP3P$(VERSION).ZIP
@@ -92,7 +92,7 @@ COMMON_FLAGS_060 = -m68060 -Os -msoft-float -specs=nano.specs \
     				-fno-unroll-loops -fno-peel-loops -fno-builtin \
 					-falign-functions=16 \
 					$(INCLUDE_FLAGS)
-CFLAGS_060 = $(COMMON_FLAGS_060) -D__OPT_X68K_16BIT_PCM_DIRECT__
+CFLAGS_060 = $(COMMON_FLAGS_060) -D__OPT_X68K_16BIT_PCM_DIRECT__ -D__VERBOSE__
 
 # デフォルトのターゲット
 all : 000 030 060
