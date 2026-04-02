@@ -1,0 +1,5 @@
+HMP3P.X - A simple high memory MP3 player for X680x0
+
+Visit the site for more details.
+
+https://github.com/tantanGH/hmp3p/

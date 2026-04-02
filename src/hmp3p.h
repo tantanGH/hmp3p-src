@@ -1,12 +1,12 @@
 #ifndef __H_HMP3P__
 #define __H_HMP3P__
 
-#define VERSION "0.8.1 (2026/03/14)"
+#define VERSION "0.9.0 (2026/04/03)"
 
 #define MAX_PATH_LEN (256)
 
 #define FREAD_STAGING_BUFFER_BYTES (512*1024)
-#define FREAD_CHUNK_BYTES (16*1024*1024)
+#define FREAD_CHUNK_BYTES (8*1024*1024)
 
 #define MAD_MAX_SAMPLES (1152)
 

@@ -1,22 +1,26 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
-#include <stat.h>
-#include <doslib.h>
-#include <iocslib.h>
+#include <jstring.h>
+#include <cmdline.h>
+#include <himem.h>
+#include <x68k/dos.h>
+#include <x68k/iocs.h>
+
+// pcm driver
+#include <pcm8a.h>
+#include <pcm8pp.h>
+
+// jpeg
+#include <jpeg.h>
 
 // devices
 #include "keyboard.h"
-#include "himem.h"
-#include "crtc.h"
 
 // resource
 #include "cp932rsc.h"
-
-// pcm driver
-#include "pcm8a.h"
-#include "pcm8pp.h"
 
 // codec
 #include "mp3_decode.h"
@@ -27,8 +31,8 @@
 //
 //  abort vectors
 //
-static uint32_t g_abort_vector1;
-static uint32_t g_abort_vector2;
+static void* g_abort_vector1 = NULL;
+static void* g_abort_vector2 = NULL;
 
 //
 //  chain table top
@@ -50,11 +54,11 @@ static uint32_t g_original_pcm8pp_max_channels = 0;
 //
 //  abort vector handler
 //
-static void abort_application() {
+static __attribute__((interrupt)) void abort_application() {
 
   // resume abort vectors
-  INTVCS(0xFFF1, (int8_t*)g_abort_vector1);
-  INTVCS(0xFFF2, (int8_t*)g_abort_vector2);  
+  if (g_abort_vector1 != NULL) _dos_intvcs(0xFFF1, g_abort_vector1);
+  if (g_abort_vector2 != NULL) _dos_intvcs(0xFFF2, g_abort_vector2);  
 
   // stop pcm8a
   if (pcm8a_isavailable()) {
@@ -75,11 +79,12 @@ static void abort_application() {
     CHAIN_TABLE* rct = g_init_chain_table;
     while (rct != NULL) {
       if (rct->buffer != NULL) {
-        himem_free(rct->buffer, 1);
+        himem_free(rct->buffer);
+        rct->buffer = NULL;
       }
       CHAIN_TABLE* pre_rct = rct;
       rct = rct->next;
-      himem_free(pre_rct, 1);
+      himem_free(pre_rct);
     }
     g_init_chain_table = NULL;
   }
@@ -89,27 +94,28 @@ static void abort_application() {
     CHAIN_TABLE_EX* rct = g_init_chain_table_ex;
     while (rct != NULL) {
       if (rct->buffer != NULL) {
-        himem_free(rct->buffer, 1);
+        himem_free(rct->buffer);
+        rct->buffer = NULL;
       }
       CHAIN_TABLE_EX* pre_rct = rct;
       rct = rct->next;
-      himem_free(pre_rct, 1);
+      himem_free(pre_rct);
     }
     g_init_chain_table_ex = NULL;
   }
 
   // cursor on
-  C_CURON();
+  _dos_c_curon();
 
   // funckey mode
   if (g_funckey_mode >= 0) {
-    C_FNKMOD(g_funckey_mode);
+    _dos_c_fnkmod(g_funckey_mode);
   }
   
   // flush key buffer
-  KFLUSHIO(0xff);
+  _dos_kflushio(0xff);
 
-  printf("Aborted.\n");
+  _iocs_b_print(cp932rsc_aborted);
 
   exit(1);
 }
@@ -121,15 +127,15 @@ static int32_t get_mpu_type() {
 
   int32_t mpu_type = 0;
 
-  uint32_t rom_version = ((uint32_t)ROMVER()) >> 24;
+  uint32_t rom_version = ((uint32_t)_iocs_romver()) >> 24;
   if (rom_version <= 0x12) goto exit;
 
-  struct REGS in_regs = { 0 };
-  struct REGS out_regs = { 0 };
+  struct iocs_regs in_regs = { 0 };
+  struct iocs_regs out_regs = { 0 };
 
   in_regs.d0 = 0xac;      // IOCS _SYS_STAT
 
-  TRAP15(&in_regs, &out_regs);
+  _iocs_trap15(&in_regs, &out_regs);
 
   mpu_type = out_regs.d0 & 0xff;
 
@@ -141,7 +147,7 @@ exit:
 //  show help message
 //
 static void show_help_message() {
-  printf("HMP3P.X - High Memory MP3 player for X680x0 + Mercury-UNIT version " VERSION " by tantan\n");
+  printf("HMP3P.X - High Memory MP3 player for X680x0 version " VERSION " by tantan\n");
   printf("usage: hmp3p [options] <input-file.mp3>\n");
   printf("options:\n");
   printf("     -l[n] ... loop count (none:endless, default:1)\n");
@@ -157,7 +163,7 @@ static void show_help_message() {
 //
 //  main
 //
-int32_t main(int32_t argc, uint8_t* argv[]) {
+int32_t main(int32_t argc_, uint8_t* argv_[]) {
 
   // default return code
   int32_t rc = 1;
@@ -179,9 +185,9 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   int32_t num_chains = 0;
 
   // exit error message
-  uint8_t error_mes[ 256 ];
+  static uint8_t error_mes[ 256 ];
   error_mes[0] = '\0';
-  
+
   // check mpu type
 #ifdef __mc68060__
   if (get_mpu_type() < 6) {
@@ -196,13 +202,16 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
 #endif
 
   // preserve abort vectors
-  g_abort_vector1 = INTVCS(0xFFF1, (int8_t*)abort_application);
-  g_abort_vector2 = INTVCS(0xFFF2, (int8_t*)abort_application);  
+  g_abort_vector1 = _dos_intvcs(0xFFF1, (void*)abort_application);
+  g_abort_vector2 = _dos_intvcs(0xFFF2, (void*)abort_application);  
 
   // preserve function key mode
-  g_funckey_mode = C_FNKMOD(-1);
+  g_funckey_mode = _dos_c_fnkmod(-1);
 
   // parse command line options
+  int32_t argc = cmdline_get_argc();
+  char** argv = cmdline_get_argv();
+
   for (int16_t i = 1; i < argc; i++) {
     if (argv[i][0] == '-' && strlen(argv[i]) >= 2) {
       if (argv[i][1] == 'v') {
@@ -250,7 +259,7 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
         goto exit;
       }
       mp3_file_name = argv[i];
-      if (strlen(mp3_file_name) < 5 || stricmp(mp3_file_name + strlen(mp3_file_name) - 4, ".mp3") != 0) {
+      if (strlen(mp3_file_name) < 5 || strcasecmp(mp3_file_name + strlen(mp3_file_name) - 4, ".mp3") != 0) {
         strcpy(error_mes, cp932rsc_not_mp3_file);
         goto exit;
       }
@@ -293,7 +302,7 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
 
   // credit
   if (pic_brightness == 0) {
-    printf("HMP3P.X - High Memory MP3 player for X680x0 + Mercury-UNIT version " VERSION " by tantan\n");
+    _iocs_b_print("HMP3P.X - High Memory MP3 player for X680x0 version " VERSION " by tantan\n");
   }
 
   // reset PCM8A/PCM8PP
@@ -306,12 +315,7 @@ int32_t main(int32_t argc, uint8_t* argv[]) {
   }
 
   // cursor off
-  C_CUROFF();
-
-  // enter supervisor mode if needed
-  if (pic_brightness > 0) {
-    B_SUPER(0);
-  }
+  _dos_c_curoff();
 
   // display mp3 attribute at first play
   int16_t first_play = 1;
@@ -320,21 +324,10 @@ loop:
 
   // init crtc if album art is required
   if (pic_brightness > 0) {
-
-    G_CLR_ON();
-    crtc_set_extra_mode(0);
-
-    C_FNKMOD(3);    // function key display off
-    C_CLS_AL();
-
-    TPALET2(4, 0x0001);
-    TPALET2(5, TPALET2(1,-1));
-    TPALET2(6, TPALET2(2,-1));
-    TPALET2(7, TPALET2(3,-1));
-
-    struct TXFILLPTR txfil = { 2, 0, 0, 768, 512, 0xffff };
-    TXFILL(&txfil);
-
+    jpeg_crtmod_768x512_65536();
+    _dos_c_fnkmod(3);     // function key display off
+    _dos_c_cls_al();
+    jpeg_fill_text_masks();
   }
 
   // current chain table entries
@@ -343,10 +336,15 @@ loop:
   CHAIN_TABLE_EX* cur_chain_table_ex = NULL;
   size_t chain_table_ex_buffer_bytes = CHAIN_TABLE_EX_BUFFER_BYTES / (mp3_quality + 1);
 
+  // reclaimable chain table entries
+  CHAIN_TABLE* reclaim_chain_table = NULL;
+  CHAIN_TABLE_EX* reclaim_chain_table_ex = NULL;
+  int32_t reclaim_block_counter = 0;
+
   // file read buffers
   void* fread_buffer = NULL;
   void* fread_staging_buffer = NULL;
-  FILE* fp = NULL;
+  int32_t fd = -1;
 
 try:
 
@@ -358,15 +356,15 @@ try:
   }
 
   // open input file
-  fp = fopen(mp3_file_name, "rb");
-  if (fp == NULL) {
+  fd = _dos_open(mp3_file_name, 0);
+  if (fd < 0) {
     strcpy(error_mes, cp932rsc_file_open_error);
     goto catch;
   }
 
   // parse ID3v2 tags
   size_t skip_offset = 0;
-  int32_t ofs = mp3_decode_parse_tags(&mp3_decoder, pic_brightness, 0, fp);
+  int32_t ofs = mp3_decode_parse_tags(&mp3_decoder, pic_brightness, 0, fd);
   if (ofs < 0) {
     strcpy(error_mes, cp932rsc_id3tag_read_error);
     goto catch;
@@ -375,22 +373,16 @@ try:
 
   // adjust scroll position
   if (pic_brightness > 0) {
-    SCROLL(0, 512-128, 0);
-    SCROLL(1, 512-128, 0);
-    SCROLL(2, 512-128, 0);
-    SCROLL(3, 512-128, 0);
-    struct TXFILLPTR txfil = { 2, 128, 0, 512, 512, 0x0000 };
-    TXFILL(&txfil);
+    jpeg_open_text_masks();
   }
 
   // obtain data content size
-  fseek(fp, 0, SEEK_END);
-  uint32_t mp3_data_size = ftell(fp) - skip_offset;
-  fseek(fp, skip_offset, SEEK_SET);
+  uint32_t mp3_data_size = _dos_seek(fd, 0, 2) - skip_offset;
+  _dos_seek(fd, skip_offset, 0);
 
   // allocate file read buffer
   size_t fread_buffer_len = mp3_data_size;
-  fread_buffer = himem_malloc(fread_buffer_len, use_high_memory);
+  fread_buffer = himem_malloc(fread_buffer_len);
   if (fread_buffer == NULL) {
     strcpy(error_mes, cp932rsc_himem_shortage);
     goto catch;
@@ -399,32 +391,32 @@ try:
   // read whole mp3 file content into high memory
   if (staging_file_read) {
     // use staging buffer on main memory (for SCSI disk)
-    printf("\rLoading MP3 file...\x1b[0K");
-    fread_staging_buffer = himem_malloc(FREAD_STAGING_BUFFER_BYTES, 0);   // allocate in main memory
+    _iocs_b_print(cp932rsc_now_loading);
+    fread_staging_buffer = malloc(FREAD_STAGING_BUFFER_BYTES);   // allocate in main memory
     if (fread_staging_buffer == NULL) {
       strcpy(error_mes, cp932rsc_mainmem_shortage);
       goto catch;
     }    
     size_t read_len = 0; 
     do {
-      size_t len = fread(fread_staging_buffer, 1, FREAD_STAGING_BUFFER_BYTES, fp);
+      size_t len = _dos_read(fd, fread_staging_buffer, FREAD_STAGING_BUFFER_BYTES);
       memcpy(fread_buffer + read_len, fread_staging_buffer, len);
       read_len += len;
     } while (read_len < mp3_data_size);
-    himem_free(fread_staging_buffer, 0);
+    free(fread_staging_buffer);
     fread_staging_buffer = NULL;
-    printf("\r\x1b[0K");
+    _iocs_b_print(cp932rsc_erase_line);
   } else {
     // direct load to high memory from VDISK/WindrvXM
     size_t read_len = 0; 
     do {
       size_t read_size = (mp3_data_size - read_len) < FREAD_CHUNK_BYTES ? (mp3_data_size - read_len) : FREAD_CHUNK_BYTES;
-      size_t len = fread(fread_buffer + read_len, 1, read_size, fp);
+      size_t len = _dos_read(fd, fread_buffer + read_len, read_size);
       read_len += len;
     } while (read_len < mp3_data_size);
   }
-  fclose(fp);
-  fp = NULL;
+  _dos_close(fd);
+  fd = -1;
 
   // setup mp3 decoder
   if (mp3_decode_setup(&mp3_decoder, fread_buffer, mp3_data_size, mp3_quality) != 0) {
@@ -435,31 +427,41 @@ try:
   // describe mp3 attributes
   if (first_play || pic_brightness > 0) {
 
-    printf("\n");
+    static uint8_t mes[256];
 
-    printf("File name     : %s\n", mp3_file_name);
-    printf("Data size     : %d [bytes]\n", mp3_data_size);
-    printf("Data format   : %s\n", "MP3");
+    _iocs_b_print(cp932rsc_crlf);
+
+    sprintf(mes, cp932rsc_mp3_file_name, mp3_file_name);
+    _iocs_b_print(mes);
+    sprintf(mes, cp932rsc_mp3_data_size, mp3_data_size);
+    _iocs_b_print(mes);
+    sprintf(mes, cp932rsc_mp3_data_format, "MP3");
+    _iocs_b_print(mes);
 
     // describe playback drivers
-    printf("PCM driver    : %s (volume:%d)\n", 
+    sprintf(mes, cp932rsc_pcm_driver, 
               playback_driver == DRIVER_PCM8PP ? "PCM8PP" : 
               playback_driver == DRIVER_PCM8A  ? "PCM8A"  : "-", 
               playback_volume);
+    _iocs_b_print(mes);
 
-    printf("MP3 quality   : %s\n", mp3_quality == 1 ? "normal" : "high");
+    sprintf(mes, cp932rsc_mp3_quality, mp3_quality == 1 ? "normal" : "high");
+    _iocs_b_print(mes);
 
     if (mp3_decoder.mp3_title != NULL) {
-      printf("MP3 title     : %s\n", mp3_decoder.mp3_title);
+      sprintf(mes, cp932rsc_mp3_title, mp3_decoder.mp3_title);
+      _iocs_b_print(mes);
     }
     if (mp3_decoder.mp3_artist != NULL) {
-      printf("MP3 artist    : %s\n", mp3_decoder.mp3_artist);
+      sprintf(mes, cp932rsc_mp3_artist, mp3_decoder.mp3_artist);
+      _iocs_b_print(mes);
     }
     if (mp3_decoder.mp3_album != NULL) {
-      printf("MP3 album     : %s\n", mp3_decoder.mp3_album);
+      sprintf(mes, cp932rsc_mp3_album, mp3_decoder.mp3_album);
+      _iocs_b_print(mes);
     }
 
-    printf("\n");
+    _iocs_b_print(cp932rsc_crlf);
 
     //first_play = 0;
   }
@@ -470,22 +472,24 @@ try:
 
     if (end_flag) break;
 
-    printf("\rNow buffering (%d/%d) ... [SHIFT] key to cancel.", i+1, num_buffers);
+    static uint8_t mes[256];
+    sprintf(mes, cp932rsc_now_buffering, i+1, num_buffers);
+    _iocs_b_print(mes);
 
     if (playback_driver == DRIVER_PCM8A) {
 
       // allocate a new chain table entry in high memory
-      CHAIN_TABLE* ct = (CHAIN_TABLE*)himem_malloc(sizeof(CHAIN_TABLE), use_high_memory);
+      CHAIN_TABLE* ct = (CHAIN_TABLE*)himem_calloc(sizeof(CHAIN_TABLE), 1);   // zero clear
       if (ct == NULL) {
         strcpy(error_mes, cp932rsc_himem_shortage);
         goto catch;
       }
 
       // zero clear
-      memset(ct, 0, sizeof(CHAIN_TABLE));
+      //memset(ct, 0, sizeof(CHAIN_TABLE));
 
       // allocate pcm data buffer for this chain table entry
-      ct->buffer = himem_malloc(chain_table_buffer_bytes, use_high_memory);
+      ct->buffer = himem_malloc(chain_table_buffer_bytes);
       if (ct->buffer == NULL) {
         strcpy(error_mes, cp932rsc_himem_shortage);
         goto catch;
@@ -500,8 +504,8 @@ try:
 
       // end of mp3?
       if (decoded_bytes == 0) {
-        himem_free(ct->buffer, use_high_memory);
-        himem_free(ct, use_high_memory);
+        himem_free(ct->buffer);
+        himem_free(ct);
         end_flag = 1;
         break;
       }
@@ -522,6 +526,11 @@ try:
         cur_chain_table = ct;
       }
 
+      // reclaimable chain table top entry
+      if (reclaim_chain_table == NULL) {
+        reclaim_chain_table = ct;
+      }
+
       num_chains++;
 
     }
@@ -529,17 +538,17 @@ try:
     if (playback_driver == DRIVER_PCM8PP) {
 
       // allocate a new chain table entry in high memory
-      CHAIN_TABLE_EX* ct = (CHAIN_TABLE_EX*)himem_malloc(sizeof(CHAIN_TABLE_EX), use_high_memory);
+      CHAIN_TABLE_EX* ct = (CHAIN_TABLE_EX*)himem_calloc(sizeof(CHAIN_TABLE_EX), 1);   // zero clear
       if (ct == NULL) {
         strcpy(error_mes, cp932rsc_himem_shortage);
         goto catch;
       }
 
       // zero clear
-      memset(ct, 0, sizeof(CHAIN_TABLE_EX));
+      //memset(ct, 0, sizeof(CHAIN_TABLE_EX));
 
       // allocate pcm data buffer for this chain table entry
-      ct->buffer = himem_malloc(chain_table_ex_buffer_bytes, use_high_memory);
+      ct->buffer = himem_malloc(chain_table_ex_buffer_bytes);
       if (ct->buffer == NULL) {
         strcpy(error_mes, cp932rsc_himem_shortage);
         goto catch;
@@ -554,8 +563,8 @@ try:
 
       // end of mp3?
       if (decoded_bytes == 0) {
-        himem_free(ct->buffer, use_high_memory);
-        himem_free(ct, use_high_memory);
+        himem_free(ct->buffer);
+        himem_free(ct);
         end_flag = 1;
         break;
       }
@@ -575,14 +584,19 @@ try:
         cur_chain_table_ex->next = ct;
         cur_chain_table_ex = ct;
       }
+      
+      // reclaimable chain table top entry
+      if (reclaim_chain_table_ex == NULL) {
+        reclaim_chain_table_ex = ct;
+      }
 
       num_chains++;
 
     }
 
     // check shift key to exit
-    if (B_SFTSNS() & 0x01) {
-      printf("\r\x1b[KCanceled.\n");
+    if (_iocs_b_sftsns() & 0x01) {
+      _iocs_b_print(cp932rsc_canceled);
       goto exit;
     }
 
@@ -591,10 +605,13 @@ try:
   // display mp3 frequency and channels (we cannot get this before any frame data decoding)
   int32_t pcm_freq = mp3_decoder.mp3_sample_rate;
   int16_t pcm_channels = mp3_decoder.mp3_channels;
-  printf("\r\x1b[0K\x1bM");
+  _iocs_b_print(cp932rsc_erase_line_and_up);
   if (first_play) {
-    printf("MP3 frequency : %d [Hz]\n", mp3_decoder.mp3_sample_rate);
-    printf("MP3 channels  : %s\n", mp3_decoder.mp3_channels == 1 ? "mono" : "stereo");
+    static uint8_t mes[256];
+    sprintf(mes, cp932rsc_mp3_frequency, mp3_decoder.mp3_sample_rate);
+    _iocs_b_print(mes);
+    sprintf(mes, cp932rsc_mp3_channels, mp3_decoder.mp3_channels == 1 ? "mono" : "stereo");
+    _iocs_b_print(mes);
     first_play = 0;
   }
 
@@ -640,210 +657,263 @@ try:
 
   }
 
-  printf("\nNow playing ... push [ESC]/[Q] key to quit. [SPACE] to pause.\x1b[0K\n");
+  _iocs_b_print(cp932rsc_now_playing);
   int16_t paused = 0;
 
   // dummy wait to make sure DMAC start (200 msec)
-  for (int32_t t0 = ONTIME(); ONTIME() < t0 + 20;) {}
+  for (int32_t t0 = (_iocs_ontime()).sec; (_iocs_ontime()).sec < t0 + 20;) {}
 
   int32_t block_counter_ofs = 0;
   int16_t buffer_delta = num_buffers;
 
-  for (;;) {
+  // main loop for pcm8a
+  if (playback_driver == DRIVER_PCM8A) {
+
+    for (;;) {
    
-    // check esc key to exit, space key to pause
-    if (B_KEYSNS() != 0) {
-      int16_t scan_code = B_KEYINP() >> 8;
-      if (scan_code == KEY_SCAN_CODE_ESC || scan_code == KEY_SCAN_CODE_Q) {
-        B_PRINT("\r\nStopped.");
-        rc = 1;
-        break;
-      } else if (scan_code == KEY_SCAN_CODE_SPACE) {
-        if (paused) {
-          if (playback_driver == DRIVER_PCM8A) {
-            pcm8a_resume();
-          } else if (playback_driver == DRIVER_PCM8PP) {
-            pcm8pp_resume();
-          }
-          paused = 0;
-        } else {
-          if (playback_driver == DRIVER_PCM8A) {
-            pcm8a_pause();
-          } else if (playback_driver == DRIVER_PCM8PP) {
-            pcm8pp_pause();
-          }
-          paused = 1;
-        }
-      }
-    }
-
-    // exit if not playing
-    if (!paused) {
-      if ((playback_driver == DRIVER_PCM8A  && pcm8a_get_data_length(0)  == 0) ||
-          (playback_driver == DRIVER_PCM8PP && pcm8pp_get_data_length(0) == 0)) {
-        if (end_flag) { 
-          B_PRINT("\r\nFinished.\r\n");
-          rc = 0;
+      // check esc key to exit, space key to pause
+      if (_iocs_b_keysns() != 0) {
+        int16_t scan_code = (_iocs_b_keyinp() >> 8);
+        if (scan_code == KEY_SCAN_CODE_ESC || scan_code == KEY_SCAN_CODE_Q) {
+          _iocs_b_print(cp932rsc_stopped);
+          rc = 1;
           break;
-        } else {
-          // in case playback is stopped but not reached to the end, buffer underrun is observed.
-          printf("\n%s\n", cp932rsc_buffer_underrun);
+        } else if (scan_code == KEY_SCAN_CODE_SPACE) {
+          if (paused) {
+            pcm8a_resume();
+            paused = 0;
+          } else {
+            pcm8a_pause();
+            paused = 1;
+          }
         }
       }
-    }
 
-    // decode additional data
-    if (!end_flag) {
-
-      if (playback_driver == DRIVER_PCM8A) {
-
-        // allocate the next chain table entry
-        CHAIN_TABLE* ct = (CHAIN_TABLE*)himem_malloc(sizeof(CHAIN_TABLE), use_high_memory);
-        if (ct == NULL) {
-          strcpy(error_mes, cp932rsc_himem_shortage);
-          goto catch;
-        }
-
-        // zero clear
-        memset(ct, 0, sizeof(CHAIN_TABLE));
-
-        // allocate pcm buffer for this chain table entry
-        ct->buffer = himem_malloc(chain_table_buffer_bytes, use_high_memory);
-        if (ct->buffer == NULL) {
-          strcpy(error_mes, cp932rsc_himem_shortage);
-          goto catch;
-        }
-
-        // decode mp3 stream into pcm buffer
-        size_t decoded_bytes;
-        if (mp3_decode_resample(&mp3_decoder, ct->buffer, chain_table_buffer_bytes, 15625, &decoded_bytes) != 0) {
-          strcpy(error_mes, cp932rsc_mp3_decode_error);
-          goto catch;      
-        }
-
-        // end of mp3?
-        if (decoded_bytes == 0) {
-          himem_free(ct->buffer, use_high_memory);
-          himem_free(ct, use_high_memory);
-          end_flag = 1;
-          if (!quiet_mode) B_PRINT("|");
-          continue;
-        }
-
-        // decoded byte length
-        ct->buffer_len = decoded_bytes;
-
-        // update current chain table entry pointer
-        cur_chain_table->next = ct;
-        cur_chain_table = ct;
-
-        // number of total chains
-        num_chains++;
-
-        // in case any buffered chain is consumed, display '*'. Otherwise display '.'.
-        void* cur_pcm8a_addr = pcm8a_get_access_address(0);
-        int32_t block_counter = 0;
-        CHAIN_TABLE* rct = g_init_chain_table;
-        CHAIN_TABLE* resume_chain_table = NULL;
-        while (rct != NULL) {
-          if (rct->buffer <= cur_pcm8a_addr && cur_pcm8a_addr < (rct->buffer + rct->buffer_len * 2)) {
-            resume_chain_table = rct;
-            break;
-          }
-          block_counter++;
-          rct = rct->next;
-        }
-
-        int16_t dt = num_chains - block_counter;
-        if (dt >= buffer_delta) {
-          if (!quiet_mode) B_PRINT(">");
-        } else {
-          if (!quiet_mode) B_PRINT("*");
-          buffer_delta = dt;
-        }
-
-        // buffer underrun recovery
+      // exit if not playing
+      if (!paused) {
         if (pcm8a_get_data_length(0) == 0) {
-          if ((num_chains - block_counter) > 6) {
-            if (resume_chain_table != NULL) {  
-              pcm8a_play_linked_array_chain(0, pcm8a_channel_mode, resume_chain_table);
-              buffer_delta = num_chains - block_counter;
-            }
+          if (end_flag) { 
+            _iocs_b_print(cp932rsc_finished);
+            rc = 0;
+            break;
+          } else {
+            // in case playback is stopped but not reached to the end, buffer underrun is observed.
+            _iocs_b_print(cp932rsc_buffer_underrun);
           }
         }
       }
 
-      if (playback_driver == DRIVER_PCM8PP) {
+      // already finishing decoding?
+      if (end_flag) {
+        usleep(500000);
+        continue;
+      }
 
-        // allocate the next chain table entry
-        CHAIN_TABLE_EX* ct = (CHAIN_TABLE_EX*)himem_malloc(sizeof(CHAIN_TABLE_EX), use_high_memory);
-        if (ct == NULL) {
-          strcpy(error_mes, cp932rsc_himem_shortage);
-          goto catch;
+      // decode additional data
+
+      // allocate the next chain table entry
+      CHAIN_TABLE* ct = (CHAIN_TABLE*)himem_calloc(sizeof(CHAIN_TABLE), 1);   // zero clear
+      if (ct == NULL) {
+        strcpy(error_mes, cp932rsc_himem_shortage);
+        goto catch;
+      }
+
+      // zero clear
+      //memset(ct, 0, sizeof(CHAIN_TABLE));
+
+      // allocate pcm buffer for this chain table entry
+      ct->buffer = himem_malloc(chain_table_buffer_bytes);
+      if (ct->buffer == NULL) {
+        strcpy(error_mes, cp932rsc_himem_shortage);
+        goto catch;
+      }
+
+      // decode mp3 stream into pcm buffer
+      size_t decoded_bytes;
+      if (mp3_decode_resample(&mp3_decoder, ct->buffer, chain_table_buffer_bytes, 15625, &decoded_bytes) != 0) {
+        strcpy(error_mes, cp932rsc_mp3_decode_error);
+        goto catch;      
+      }
+
+      // end of mp3?
+      if (decoded_bytes == 0) {
+        himem_free(ct->buffer);
+        himem_free(ct);
+        end_flag = 1;
+        if (!quiet_mode) _iocs_b_print(cp932rsc_progress_last);
+        continue;
+      }
+
+      // decoded byte length
+      ct->buffer_len = decoded_bytes;
+
+      // update current chain table entry pointer
+      cur_chain_table->next = ct;
+      cur_chain_table = ct;
+
+      // number of total chains
+      num_chains++;
+
+      // in case any buffered chain is consumed, display '*'. Otherwise display '.'.
+      void* cur_pcm8a_addr = pcm8a_get_access_address(0);
+      int32_t block_counter = 0;
+      CHAIN_TABLE* rct = g_init_chain_table;
+      CHAIN_TABLE* resume_chain_table = NULL;
+      while (rct != NULL) {
+        if (rct->buffer != NULL && rct->buffer <= cur_pcm8a_addr && cur_pcm8a_addr < (rct->buffer + rct->buffer_len * 2)) {
+          resume_chain_table = rct;
+          break;
         }
+        block_counter++;
+        rct = rct->next;
+      }
 
-        // zero clear
-        memset(ct, 0, sizeof(CHAIN_TABLE_EX));
-
-        // allocate pcm buffer for this chain table entry
-        ct->buffer = himem_malloc(chain_table_ex_buffer_bytes, use_high_memory);
-        if (ct->buffer == NULL) {
-          strcpy(error_mes, cp932rsc_himem_shortage);
-          goto catch;
+      int32_t dt = num_chains - block_counter;
+      if (dt >= buffer_delta) {
+        if (!quiet_mode) _iocs_b_print(cp932rsc_progress_normal);
+        if (reclaim_block_counter < block_counter && reclaim_chain_table->buffer != NULL) {    // reclaim buffer memory
+          himem_free(reclaim_chain_table->buffer);
+          reclaim_chain_table->buffer = NULL;
+          reclaim_chain_table = reclaim_chain_table->next;
+          reclaim_block_counter = block_counter;
         }
+      } else {
+        if (!quiet_mode) _iocs_b_print(cp932rsc_progress_under);
+        buffer_delta = dt;
+      }
 
-        // decode mp3 stream into pcm buffer
-        size_t decoded_bytes;
-        if (mp3_decode_full(&mp3_decoder, ct->buffer, chain_table_ex_buffer_bytes, &decoded_bytes) != 0) {
-          strcpy(error_mes, cp932rsc_mp3_decode_error);
-          goto catch;      
-        }
-
-        // end of mp3?
-        if (decoded_bytes == 0) {
-          himem_free(ct->buffer, use_high_memory);
-          himem_free(ct, use_high_memory);
-          end_flag = 1;
-          if (!quiet_mode) B_PRINT("|");
-          continue;
-        }
-
-        // decoded byte length
-        ct->buffer_len = decoded_bytes;
-
-        // update current chain table entry pointer
-        cur_chain_table_ex->next = ct;
-        cur_chain_table_ex = ct;
-
-        // number of total chains
-        num_chains++;
-
-        // in case any buffered chain is consumed, display '*'. Otherwise display '.'.
-        int16_t dt = num_chains - (block_counter_ofs + pcm8pp_get_block_counter(0));
-        if (dt >= buffer_delta) {
-          if (!quiet_mode) B_PRINT(">");
-        } else {
-          if (!quiet_mode) B_PRINT("*");
-          buffer_delta = dt;
-        }
-
-        // buffer underrun recovery
-        if (pcm8pp_get_data_length(0) == 0) {
-          int32_t block_counter = pcm8pp_get_block_counter(0) + block_counter_ofs;
-          if ((num_chains - block_counter) > 6) {
-            CHAIN_TABLE_EX* resume_chain_table = g_init_chain_table_ex;
-            for (int32_t i = 0; i < block_counter; i++) {
-              resume_chain_table = resume_chain_table->next;
-              if (resume_chain_table == NULL) break;
-            }
-            if (resume_chain_table != NULL) {  
-              pcm8pp_play_ex_linked_array_chain(0, pcm8pp_channel_mode, 1, pcm_freq * 256, resume_chain_table);
-              block_counter_ofs = block_counter;
-              buffer_delta = num_chains - (block_counter_ofs + pcm8pp_get_block_counter(0));
-            }
+      // buffer underrun recovery
+      if (pcm8a_get_data_length(0) == 0) {
+        if ((num_chains - block_counter) > 6) {
+          if (resume_chain_table != NULL) {  
+            pcm8a_play_linked_array_chain(0, pcm8a_channel_mode, resume_chain_table);
+            buffer_delta = num_chains - block_counter;
           }
         }
+      }
 
+    }
+  }
+
+  // main loop for pcm8pp
+  if (playback_driver == DRIVER_PCM8PP) {
+
+    for (;;) {
+
+      // check esc key to exit, space key to pause
+      if (_iocs_b_keysns() != 0) {
+        int16_t scan_code = (_iocs_b_keyinp() >> 8);
+        if (scan_code == KEY_SCAN_CODE_ESC || scan_code == KEY_SCAN_CODE_Q) {
+          _iocs_b_print(cp932rsc_stopped);
+          rc = 1;
+          break;
+        } else if (scan_code == KEY_SCAN_CODE_SPACE) {
+          if (paused) {
+            pcm8pp_resume();
+            paused = 0;
+          } else {
+            pcm8pp_pause();
+            paused = 1;
+          }
+        }
+      }
+
+      // exit if not playing
+      if (!paused) {
+        if (pcm8pp_get_data_length(0) == 0) {
+          if (end_flag) { 
+            _iocs_b_print(cp932rsc_finished);
+            rc = 0;
+            break;
+          } else {
+            // in case playback is stopped but not reached to the end, buffer underrun is observed.
+            _iocs_b_print(cp932rsc_buffer_underrun);
+          }
+        }
+      }
+
+      // already finishing decoding?
+      if (end_flag) {
+        usleep(500000);
+        continue;
+      }
+
+      // decode additional data
+
+      // allocate the next chain table entry
+      CHAIN_TABLE_EX* ct = (CHAIN_TABLE_EX*)himem_calloc(sizeof(CHAIN_TABLE_EX), 1);    // with zero clear
+      if (ct == NULL) {
+        strcpy(error_mes, cp932rsc_himem_shortage);
+        goto catch;
+      }
+
+      // zero clear
+      //memset(ct, 0, sizeof(CHAIN_TABLE_EX));
+
+      // allocate pcm buffer for this chain table entry
+      ct->buffer = himem_malloc(chain_table_ex_buffer_bytes);
+      if (ct->buffer == NULL) {
+        strcpy(error_mes, cp932rsc_himem_shortage);
+        goto catch;
+      }
+
+      // decode mp3 stream into pcm buffer
+      size_t decoded_bytes;
+      if (mp3_decode_full(&mp3_decoder, ct->buffer, chain_table_ex_buffer_bytes, &decoded_bytes) != 0) {
+        strcpy(error_mes, cp932rsc_mp3_decode_error);
+        goto catch;      
+      }
+
+      // end of mp3?
+      if (decoded_bytes == 0) {
+        himem_free(ct->buffer);
+        himem_free(ct);
+        end_flag = 1;
+        if (!quiet_mode) _iocs_b_print(cp932rsc_progress_last);
+        continue;
+      }
+
+      // decoded byte length
+      ct->buffer_len = decoded_bytes;
+
+      // update current chain table entry pointer
+      cur_chain_table_ex->next = ct;
+      cur_chain_table_ex = ct;
+
+      // number of total chains
+      num_chains++;
+
+      // in case any buffered chain is consumed, display '*'. Otherwise display '.'.
+      int32_t block_counter = pcm8pp_get_block_counter(0);
+      int32_t dt = num_chains - (block_counter_ofs + block_counter);
+      if (dt >= buffer_delta) {
+        if (!quiet_mode) _iocs_b_print(cp932rsc_progress_normal);
+        if (reclaim_block_counter < block_counter && reclaim_chain_table_ex->buffer != NULL) {    // reclaim buffer memory
+          himem_free(reclaim_chain_table_ex->buffer);
+          reclaim_chain_table_ex->buffer = NULL;
+          reclaim_chain_table_ex = reclaim_chain_table_ex->next;
+          reclaim_block_counter = block_counter;
+        }
+      } else {
+        if (!quiet_mode) _iocs_b_print(cp932rsc_progress_under);
+        buffer_delta = dt;
+      }
+
+      // buffer underrun recovery
+      if (pcm8pp_get_data_length(0) == 0) {
+        int32_t block_counter = pcm8pp_get_block_counter(0) + block_counter_ofs;
+        if ((num_chains - block_counter) > 6) {
+          CHAIN_TABLE_EX* resume_chain_table = g_init_chain_table_ex;
+          for (int32_t i = 0; i < block_counter; i++) {
+            resume_chain_table = resume_chain_table->next;
+            if (resume_chain_table == NULL) break;
+          }
+          if (resume_chain_table != NULL) {  
+            pcm8pp_play_ex_linked_array_chain(0, pcm8pp_channel_mode, 1, pcm_freq * 256, resume_chain_table);
+            block_counter_ofs = block_counter;
+            buffer_delta = num_chains - (block_counter_ofs + pcm8pp_get_block_counter(0));
+          }
+        }
       }
 
     }
@@ -865,21 +935,22 @@ catch:
   }
 
   // dummy wait to make sure DMAC stop (200 msec)
-  for (int32_t t0 = ONTIME(); ONTIME() < t0 + 20;) {}
+  for (int32_t t0 = (_iocs_ontime()).sec; (_iocs_ontime()).sec < t0 + 20;) {}
 
   // close input file if still opened
-  if (fp != NULL) {
-    fclose(fp);
-    fp = NULL;
+  if (fd != -1) {
+    _dos_close(fd);
+    fd = -1;
   }
 
   // reclaim file read buffers
   if (fread_staging_buffer != NULL) {
-    himem_free(fread_staging_buffer, 0);
+    free(fread_staging_buffer);
     fread_staging_buffer = NULL;
   }
+
   if (fread_buffer != NULL) {
-    himem_free(fread_buffer, use_high_memory);
+    himem_free(fread_buffer);
     fread_buffer = NULL;
   }
 
@@ -891,11 +962,12 @@ catch:
     CHAIN_TABLE* rct = g_init_chain_table;
     while (rct != NULL) {
       if (rct->buffer != NULL) {
-        himem_free(rct->buffer, 1);
+        himem_free(rct->buffer);
+        rct->buffer = NULL;
       }
       CHAIN_TABLE* pre_rct = rct;
       rct = rct->next;
-      himem_free(pre_rct, 1);
+      himem_free(pre_rct);
     }
     g_init_chain_table = NULL;
   }
@@ -905,11 +977,12 @@ catch:
     CHAIN_TABLE_EX* rct = g_init_chain_table_ex;
     while (rct != NULL) {
       if (rct->buffer != NULL) {
-        himem_free(rct->buffer, 1);
+        himem_free(rct->buffer);
+        rct->buffer = NULL;
       }
       CHAIN_TABLE_EX* pre_rct = rct;
       rct = rct->next;
-      himem_free(pre_rct, 1);
+      himem_free(pre_rct);
     }
     g_init_chain_table_ex = NULL;
   }
@@ -917,12 +990,12 @@ catch:
   // loop check
   if (rc == 0) {
     if (loop_count == 0 || --loop_count > 0) {
-      B_PRINT("\r\n");
+      _iocs_b_print(cp932rsc_crlf);
       goto loop;
     }
   }
 
-  B_PRINT("\r\n");
+  _iocs_b_print(cp932rsc_crlf);
 
 exit:
 
@@ -934,42 +1007,31 @@ exit:
 
   // screen clear
   if (pic_brightness > 0) {
-
-    SCROLL(0, 0, 0);
-    SCROLL(1, 0, 0);
-    SCROLL(2, 0, 0);
-    SCROLL(3, 0, 0);
-
-    struct TXFILLPTR txfil = { 2, 0, 0, 768, 512, 0x0000 };
-    TXFILL(&txfil);
-
-    TPALET2(4,-2);
-    TPALET2(5,-2);
-    TPALET2(6,-2);
-    TPALET2(7,-2);
-
-    C_CLS_AL();
-    G_CLR_ON();
+    jpeg_reset_text_masks();
+    _dos_c_cls_al();
+    _iocs_g_clr_on();
   }
 
   // cursor on
-  C_CURON();
+  _dos_c_curon();
 
   // function key mode
   if (g_funckey_mode >= 0) {
-    C_FNKMOD(g_funckey_mode);
+    _dos_c_fnkmod(g_funckey_mode);
   }
 
   // resume abort vectors
-  INTVCS(0xFFF1, (int8_t*)g_abort_vector1);
-  INTVCS(0xFFF2, (int8_t*)g_abort_vector2);  
+  if (g_abort_vector1 != NULL) _dos_intvcs(0xFFF1, g_abort_vector1);
+  if (g_abort_vector2 != NULL) _dos_intvcs(0xFFF2, g_abort_vector2);  
 
   // flush key buffer
-  KFLUSHIO(0xff);
+  _dos_kflushio(0xff);
 
   // print error message
   if (error_mes[0] != '\0') {
-    printf("error: %s\n", error_mes);
+    _iocs_b_print("error: ");
+    _iocs_b_print(error_mes);
+    _iocs_b_print(cp932rsc_crlf);
   }
 
   return rc;
