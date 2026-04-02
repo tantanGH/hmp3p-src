@@ -19,3 +19,6 @@
 [submodule "libs/libjpeg"]
 	path = libs/libjpeg
 	url = https://github.com/tantanGH/libjpeg.git
+[submodule "libs/libcmdline"]
+	path = libs/libcmdline
+	url = https://github.com/tantanGH/libcmdline.git
