@@ -50,6 +50,7 @@ extern const uint8_t cp932rsc_progress_normal[];
 extern const uint8_t cp932rsc_progress_under[];
 extern const uint8_t cp932rsc_progress_last[];
 
+extern const uint8_t cp932rsc_aborted[];
 extern const uint8_t cp932rsc_stopped[];
 extern const uint8_t cp932rsc_finished[];
 extern const uint8_t cp932rsc_canceled[];

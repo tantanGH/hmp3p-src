@@ -1,6 +1,6 @@
 # elf2x68k インストールパス
 ifndef ELF2X68K_DIR
-	ELF2X68K_DIR=/opt/homebrew/Cellar/elf2x68k/20260301
+	ELF2X68K_DIR=/opt/homebrew/Cellar/elf2x68k/20260331
 endif
 
 # デフォルトサフィックスを削除
@@ -30,6 +30,7 @@ HAS2GAS = python3 has2gas.py
 # ヘッダ検索パス
 INCLUDE_FLAGS = -I${ELF2X68K_DIR}/lib/gcc/m68k-elf/13.4.0/include \
 				-I${ELF2X68K_DIR}/m68k-elf/include \
+				-I../libs/libcmdline/include \
 				-I../libs/libj/include \
 				-I../libs/libutf16/include \
 				-I../libs/libhimem/include \
@@ -49,14 +50,15 @@ HEADER_SRCS = cp932rsc.h mp3_decode.h hmp3p.h
 
 # リンカオプションおよびライブラリ検索パス
 LDFLAGS = -Wl,-s -Wl,--gc-sections \
-		  -L../libs/libj/lib -L../libs/libutf16/lib -L../libs/libhimem/lib \
+		  -L../libs/libcmdline/lib -L../libs/libj/lib \
+		  -L../libs/libutf16/lib -L../libs/libhimem/lib \
 		  -L../libs/libpcm8a/lib -L../libs/libpcm8pp/lib \
 		  -L../libs/libjpeg/lib -L../libs/libmad-x68k/lib
 
 # リンク対象のライブラリファイル
-LIBS_000 = -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpeg -lmadhm
-LIBS_030 = -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpeg -lmad030hm
-LIBS_060 = -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpeg -lmad060hm
+LIBS_000 = -lcmdline -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpeg -lmadhm
+LIBS_030 = -lcmdline -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpeg -lmad030hm
+LIBS_060 = -lcmdline -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpeg -lmad060hm
 
 # 中間ファイル生成用ディレクトリ
 INTERMEDIATE_DIR_000 = _build000/elf2x68k

@@ -98,6 +98,28 @@ int32_t mp3_decode_setup(MP3_DECODE_HANDLE* decode, void* mp3_data, size_t mp3_d
   mad_stream_init(&(decode->mad_stream));
   mad_frame_init(&(decode->mad_frame));
   mad_synth_init(&(decode->mad_synth));
+
+#ifdef __OPT_X68K_FAST_FRAME_DECODE__ 
+  // 高速化のためにライブラリの外であらかじめ初期化しておく
+  if (decode->mad_stream.main_data == NULL) {
+    //decode->mad_stream.main_data = malloc(MAD_BUFFER_MDLEN);
+    decode->mad_stream.main_data = himem_malloc(MAD_BUFFER_MDLEN);
+    if (decode->mad_stream.main_data == NULL) {
+      rc = -1;
+      goto exit;
+    }
+  }
+
+  if (decode->mad_frame.overlap == NULL) {
+    //decode->mad_frame.overlap = calloc(2 * 32 * 18, sizeof(mad_fixed_t));
+    decode->mad_frame.overlap = himem_calloc(2 * 32 * 18, sizeof(mad_fixed_t));
+    if (decode->mad_frame.overlap == NULL) {
+      rc = -1;
+      goto exit;
+    }
+  }
+#endif
+
   mad_stream_buffer(&(decode->mad_stream), mp3_data, mp3_data_len);
 
   decode->current_mad_pcm = NULL;
@@ -317,12 +339,16 @@ int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_
 
 #ifdef __VERBOSE__
   uint32_t t0 = (_iocs_ontime()).sec;
+  uint32_t td = 0;
+  uint32_t ts = 0;
 #endif
 
   for (;;) {
     
     if (decode->current_mad_pcm == NULL) {
-
+#ifdef __VERBOSE__
+      uint32_t td0 = (_iocs_ontime()).sec;
+#endif
       int16_t result = mad_frame_decode(&(decode->mad_frame), &(decode->mad_stream));
       if (result == -1) {
         if (decode->mad_stream.error == MAD_ERROR_BUFLEN) {
@@ -337,7 +363,10 @@ int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_
           goto exit;
         }
       }
-
+#ifdef __VERBOSE__
+      uint32_t td1 = (_iocs_ontime()).sec;
+      td += td1 - td0;
+#endif
       decode->mad_frame.options = decode->mp3_frame_options;
 
       // --- 16bit直書き出し最適化 ---
@@ -354,6 +383,11 @@ int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_
 #endif
 
       mad_synth_frame(&(decode->mad_synth), &(decode->mad_frame));
+
+#ifdef __VERBOSE__
+      uint32_t td2 = (_iocs_ontime()).sec;
+      ts += td2 - td1;
+#endif
 
 #ifdef __OPT_X68K_16BIT_PCM_DIRECT__
       // synth_fullの中ですでに書き込みは完了しているので、
@@ -406,7 +440,7 @@ exit:
 
 #ifdef __VERBOSE__
   uint32_t t1 = (_iocs_ontime()).sec;
-  printf("%d samples/sec\n",(int32_t)(decode_ofs * 100.0 / 2.0 / (t1 - t0)));
+  printf("%d samples/sec [%d,%d]\n",(int32_t)(decode_ofs * 100.0 / 2.0 / (t1 - t0)),td,ts);
 #endif
 
   return rc;

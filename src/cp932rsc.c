@@ -14,37 +14,35 @@ const uint8_t cp932rsc_mainmem_shortage[] =         "メインメモリエリア
 const uint8_t cp932rsc_mp3_decoder_init_error[] =   "MP3デコーダーの初期化に失敗しました。";
 const uint8_t cp932rsc_mp3_decoder_setup_error[] =  "MP3デコーダーのセットアップに失敗しました。";
 const uint8_t cp932rsc_mp3_decode_error[] =         "MP3のデコードに失敗しました。";
-const uint8_t cp932rsc_buffer_underrun[] =          "バッファアンダーランを検出しました。再バッファリングします。";
 const uint8_t cp932rsc_mpu_type_68060[] =           "このプログラムは68060専用です。";
 const uint8_t cp932rsc_mpu_type_68030[] =           "このプログラムは68030以上専用です。";
 const uint8_t cp932rsc_not_mp3_file[] =             "MP3ファイルではありません。";
 const uint8_t cp932rsc_half_rate_mercury35[] =      "ハーフレートでの再生にはMercury-UNIT V3.5以上が必要です。";
 
-const uint8_t cp932rsc_mp3_file_name[] = "File name     : %s\r\n";
-const uint8_t cp932rsc_mp3_data_size[] = "Data size     : %d [bytes]\r\n";
+const uint8_t cp932rsc_buffer_underrun[] =          "\r\nバッファアンダーランを検出しました。再バッファリングします。\r\n";
+
+const uint8_t cp932rsc_mp3_file_name[]   = "File name     : %s\r\n";
+const uint8_t cp932rsc_mp3_data_size[]   = "Data size     : %d [bytes]\r\n";
 const uint8_t cp932rsc_mp3_data_format[] = "Data format   : %s\r\n";
+const uint8_t cp932rsc_pcm_driver[]      = "PCM driver    : %s (volume:%d)\r\n";
+const uint8_t cp932rsc_mp3_quality[]     = "MP3 quality   : %s\r\n";
+const uint8_t cp932rsc_mp3_title[]       = "MP3 title     : %s\r\n";
+const uint8_t cp932rsc_mp3_artist[]      = "MP3 artist    : %s\r\n";
+const uint8_t cp932rsc_mp3_album[]       = "MP3 album     : %s\r\n";
+const uint8_t cp932rsc_mp3_frequency[]   = "MP3 frequency : %d [Hz]\r\n";
+const uint8_t cp932rsc_mp3_channels[]    = "MP3 channels  : %s\r\n"; 
 
-const uint8_t cp932rsc_pcm_driver[] = "PCM driver    : %s (volume:%d)\r\n";
-
-const uint8_t cp932rsc_mp3_quality[] = "MP3 quality   : %s\r\n";
-
-const uint8_t cp932rsc_mp3_title[] = "MP3 title     : %s\r\n";
-const uint8_t cp932rsc_mp3_artist[] = "MP3 artist    : %s\r\n";
-const uint8_t cp932rsc_mp3_album[] = "MP3 album     : %s\r\n";
-
-const uint8_t cp932rsc_mp3_frequency[] = "MP3 frequency : %d [Hz]\r\n";
-const uint8_t cp932rsc_mp3_channels[] = "MP3 channels  : %s\r\n"; 
-
-const uint8_t cp932rsc_erase_line[] = "\r\x1b[0K";
+const uint8_t cp932rsc_erase_line[]        = "\r\x1b[0K";
 const uint8_t cp932rsc_erase_line_and_up[] = "\r\x1b[0K\x1bM";
 
 const uint8_t cp932rsc_crlf[] = "\r\n";
 
 const uint8_t cp932rsc_progress_normal[] = ">";
-const uint8_t cp932rsc_progress_under[] = "*";
-const uint8_t cp932rsc_progress_last[] = "|";
+const uint8_t cp932rsc_progress_under[]  = "*";
+const uint8_t cp932rsc_progress_last[]   = "|";
 
-const uint8_t cp932rsc_stopped[] = "\r\nStopped.";
+const uint8_t cp932rsc_aborted[]  = "\r\nAborted.\r\n";
+const uint8_t cp932rsc_stopped[]  = "\r\nStopped.\r\n";
 const uint8_t cp932rsc_finished[] = "\r\nFinished.\r\n";
 const uint8_t cp932rsc_canceled[] = "\r\x1b[KCanceled.\r\n";
 
