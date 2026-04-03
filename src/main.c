@@ -335,6 +335,7 @@ loop:
   size_t chain_table_buffer_bytes = CHAIN_TABLE_BUFFER_BYTES;   // no need to adjust because of fixed resampling rate
   CHAIN_TABLE_EX* cur_chain_table_ex = NULL;
   size_t chain_table_ex_buffer_bytes = CHAIN_TABLE_EX_BUFFER_BYTES / (mp3_quality + 1);
+  num_chains = 0;
 
   // reclaimable chain table entries
   CHAIN_TABLE* reclaim_chain_table = NULL;
