@@ -480,14 +480,20 @@ try:
     if (playback_driver == DRIVER_PCM8A) {
 
       // allocate a new chain table entry in high memory
+#ifdef __mc68060__
       CHAIN_TABLE* ct = (CHAIN_TABLE*)himem_calloc(sizeof(CHAIN_TABLE), 1);   // zero clear
+#else
+      CHAIN_TABLE* ct = (CHAIN_TABLE*)himem_malloc(sizeof(CHAIN_TABLE));
+#endif
       if (ct == NULL) {
         strcpy(error_mes, cp932rsc_himem_shortage);
         goto catch;
       }
 
+#ifndef __mc68060__
       // zero clear
-      //memset(ct, 0, sizeof(CHAIN_TABLE));
+      memset(ct, 0, sizeof(CHAIN_TABLE));
+#endif
 
       // allocate pcm data buffer for this chain table entry
       ct->buffer = himem_malloc(chain_table_buffer_bytes);
@@ -539,14 +545,20 @@ try:
     if (playback_driver == DRIVER_PCM8PP) {
 
       // allocate a new chain table entry in high memory
+#ifdef __mc68060__
       CHAIN_TABLE_EX* ct = (CHAIN_TABLE_EX*)himem_calloc(sizeof(CHAIN_TABLE_EX), 1);   // zero clear
+#else
+      CHAIN_TABLE_EX* ct = (CHAIN_TABLE_EX*)himem_malloc(sizeof(CHAIN_TABLE_EX));
+#endif
       if (ct == NULL) {
         strcpy(error_mes, cp932rsc_himem_shortage);
         goto catch;
       }
 
+#ifndef __mc68060__
       // zero clear
-      //memset(ct, 0, sizeof(CHAIN_TABLE_EX));
+      memset(ct, 0, sizeof(CHAIN_TABLE_EX));
+#endif
 
       // allocate pcm data buffer for this chain table entry
       ct->buffer = himem_malloc(chain_table_ex_buffer_bytes);
@@ -713,14 +725,20 @@ try:
       // decode additional data
 
       // allocate the next chain table entry
+#ifdef __mc68060__
       CHAIN_TABLE* ct = (CHAIN_TABLE*)himem_calloc(sizeof(CHAIN_TABLE), 1);   // zero clear
+#else
+      CHAIN_TABLE* ct = (CHAIN_TABLE*)himem_malloc(sizeof(CHAIN_TABLE));
+#endif
       if (ct == NULL) {
         strcpy(error_mes, cp932rsc_himem_shortage);
         goto catch;
       }
 
+#ifndef __mc68060__
       // zero clear
-      //memset(ct, 0, sizeof(CHAIN_TABLE));
+      memset(ct, 0, sizeof(CHAIN_TABLE));
+#endif
 
       // allocate pcm buffer for this chain table entry
       ct->buffer = himem_malloc(chain_table_buffer_bytes);
@@ -842,14 +860,20 @@ try:
       // decode additional data
 
       // allocate the next chain table entry
+#ifdef __mc68060__
       CHAIN_TABLE_EX* ct = (CHAIN_TABLE_EX*)himem_calloc(sizeof(CHAIN_TABLE_EX), 1);    // with zero clear
+#else
+      CHAIN_TABLE_EX* ct = (CHAIN_TABLE_EX*)himem_malloc(sizeof(CHAIN_TABLE_EX));   
+#endif
       if (ct == NULL) {
         strcpy(error_mes, cp932rsc_himem_shortage);
         goto catch;
       }
 
+#ifndef __mc68060__
       // zero clear
-      //memset(ct, 0, sizeof(CHAIN_TABLE_EX));
+      memset(ct, 0, sizeof(CHAIN_TABLE_EX));
+#endif
 
       // allocate pcm buffer for this chain table entry
       ct->buffer = himem_malloc(chain_table_ex_buffer_bytes);

@@ -7,7 +7,7 @@ endif
 .SUFFIXES:
 
 # バージョン
-VERSION = 091
+VERSION = 092
 
 # 実行ファイル名
 TARGET_FILE_000 = HMP3P.X
