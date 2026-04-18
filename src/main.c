@@ -673,9 +673,17 @@ try:
   _iocs_b_print(cp932rsc_now_playing);
   int16_t paused = 0;
 
-  // dummy wait to make sure DMAC start (200 msec)
-  for (int32_t t0 = (_iocs_ontime()).sec; (_iocs_ontime()).sec < t0 + 20;) {}
-
+  // make sure playback start
+  if (playback_driver == DRIVER_PCM8A) {
+    while (pcm8a_get_data_length(0) == 0) {
+      usleep(50000);
+    }
+  } else if (playback_driver == DRIVER_PCM8PP) {
+    while (pcm8pp_get_data_length(0) == 0) {
+      usleep(50000);
+    }    
+  }
+  
   int32_t block_counter_ofs = 0;
   int16_t buffer_delta = num_buffers;
 
