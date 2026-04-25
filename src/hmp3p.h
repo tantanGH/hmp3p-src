@@ -1,7 +1,7 @@
 #ifndef __H_HMP3P__
 #define __H_HMP3P__
 
-#define VERSION "0.9.3 (2026/04/18)"
+#define VERSION "0.9.4 (2026/04/25)"
 
 #define MAX_PATH_LEN (256)
 
@@ -15,6 +15,7 @@
 
 #define CHAIN_TABLE_BUFFER_BYTES    (MAD_MAX_SAMPLES*2*1*24)
 #define CHAIN_TABLE_EX_BUFFER_BYTES (MAD_MAX_SAMPLES*2*2*72)
+//#define CHAIN_TABLE_EX_BUFFER_BYTES (MAD_MAX_SAMPLES*2*2*9)
 
 #define DRIVER_NONE     (-1)
 #define DRIVER_PCM8A    (0)

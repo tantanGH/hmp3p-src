@@ -152,12 +152,12 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
 
   // ID3v2 version
   int16_t id3v2_version = mp3_header[3];
-  if (id3v2_version < 0x03) {
-    return total_tag_size + 10;     // does not support ID3v2.2 or before
-  }
+//  if (id3v2_version < 0x03) {
+//    return total_tag_size + 10;     // does not support ID3v2.2 or before
+//  }
 
   // skip extended ID3v2 header
-  if (mp3_header[5] & (1<<6)) {
+  if (id3v2_version >= 0x03 && mp3_header[5] & (1<<6)) {
     uint8_t ext_header[6];
     _dos_read(fd, ext_header, 6);
     uint32_t ext_header_size = id3v2_version == 0x03 ? *((uint32_t*)(ext_header + 0)) :
@@ -172,26 +172,34 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
 
   //printf("total tag size = %d\n",total_tag_size);
 
-  while ((ofs + 10) < total_tag_size) {
+  uint32_t frame_header_size = (id3v2_version == 2) ? 6 : 10;
+  while ((ofs + frame_header_size) < total_tag_size) {
 
-    _dos_read(fd, frame_header, 10);
+    _dos_read(fd, frame_header, frame_header_size);
 
-    uint32_t frame_size = (id3v2_version == 0x03) ? *((uint32_t*)(frame_header + 4)) :
+    uint8_t tag_id[5];
+
+    uint32_t frame_size;
+    if (id3v2_version == 2) {
+        // 3バイトを結合
+        frame_size = (frame_header[3] << 16) | (frame_header[4] << 8) | frame_header[5];
+        memcpy(tag_id, frame_header, 3);
+        tag_id[3] = '_';
+        tag_id[4] = '\0';
+    } else {
+        // 既存の v2.3/v2.4 の処理
+        frame_size = (id3v2_version == 0x03) ? *((uint32_t*)(frame_header + 4)) :
                             ((frame_header[4] & 0x7f) << 21) | ((frame_header[5] & 0x7f) << 14) |
                             ((frame_header[6] & 0x7f) << 7)  |  (frame_header[7] & 0x7f);    
+        memcpy(tag_id, frame_header, 4);
+        tag_id[4] = '\0';
+    }
 
-    //uint8_t tag_key[5];
-    //memcpy(tag_key, frame_header, 4);
-    //tag_key[4] = '\0';
-    //printf("%s (%d)\n", tag_key, frame_size);
-    
-    //if ((ofs + frame_size) > total_tag_size) break;
-
-    if (memcmp(frame_header, "0000", 4) < 0 || memcmp(frame_header, "ZZZZ", 4) > 0) {
-
+    if (tag_id[0] < 'A' || tag_id[0] > 'Z') { 
+ 
       break;
 
-    } else if (memcmp(frame_header, "TIT2", 4) == 0) {
+    } else if (strcmp(tag_id, "TIT2") == 0 || strcmp(tag_id, "TT2_") == 0) {
 
       // title
       uint8_t* frame_data = malloc(frame_size);
@@ -207,7 +215,7 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
       }
       free(frame_data);
 
-    } else if (memcmp(frame_header, "TPE1", 4) == 0 && frame_size >= 4) {
+    } else if (strcmp(tag_id, "TPE1") == 0 || strcmp(tag_id, "TP1_") == 0) {
 
       // artist
       uint8_t* frame_data = malloc(frame_size);
@@ -224,7 +232,7 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
       }
       free(frame_data);   
 
-    } else if (memcmp(frame_header, "TALB", 4) == 0) {
+    } else if (strcmp(tag_id, "TALB") == 0 || strcmp(tag_id, "TAL_") == 0) {
 
       // album
       uint8_t* frame_data = malloc(frame_size);
@@ -241,7 +249,7 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
       }
       free(frame_data);
 
-    } else if (pic_brightness > 0 && memcmp(frame_header, "APIC", 4) == 0) {
+    } else if (pic_brightness > 0 && (strcmp(tag_id, "APIC") == 0 || strcmp(tag_id, "PIC_") == 0)) {
 
       // album art
       uint8_t* frame_data = malloc(frame_size);
@@ -250,7 +258,26 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
       uint8_t* mime = frame_data+1;
       uint8_t* desc = mime + strlen(mime) + 1 + 1;
       uint8_t* pic_data = desc + strlen(desc) + 1;
-      uint32_t pic_data_len = frame_size - (pic_data - frame_data);
+      uint32_t pic_data_len = 0;
+      
+      if (id3v2_version == 2) {
+        // v2.2 (PIC)
+        // Image Format は frame_data[1..3] の 3バイト固定
+        uint8_t* desc = frame_data + 1 + 3 + 1; // Encoding(1) + Format(3) + Type(1)
+        // Description の終端を探す
+        uint8_t* p = desc;
+        while (p < frame_data + frame_size && *p != 0) p++;
+        pic_data = p + 1;
+      } else {
+          // v2.3/2.4 (APIC)
+          uint8_t* mime = frame_data + 1;
+          uint8_t* desc = mime + strlen((char*)mime) + 1 + 1;
+          uint8_t* p = desc;
+          while (p < frame_data + frame_size && *p != 0) p++;
+          pic_data = p + 1;
+      }
+
+      pic_data_len = frame_size - (uint32_t)(pic_data - frame_data);
 
       if (pic_data[0] == 0xff && pic_data[1] == 0xd8) {
 
@@ -277,7 +304,7 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
       _dos_seek(fd, frame_size, 1);
     }
 
-    ofs += 10 + frame_size;
+    ofs += frame_header_size + frame_size;
 
   }
 
@@ -337,14 +364,17 @@ int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_
   // decode counter
   int32_t decode_ofs = 0;
 
+  // decode counter limit
+  int32_t decode_ofs_limit = decode_buffer_bytes / sizeof(int16_t);
+
 #ifdef __VERBOSE__
   uint32_t t0 = (_iocs_ontime()).sec;
   uint32_t td = 0;
   uint32_t ts = 0;
 #endif
 
-  for (;;) {
-    
+  while (decode_ofs < decode_ofs_limit) {
+  
     if (decode->current_mad_pcm == NULL) {
 #ifdef __VERBOSE__
       uint32_t td0 = (_iocs_ontime()).sec;
@@ -374,12 +404,6 @@ int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_
       // synth_fullが直接書き込む先のポインタをセット
       // 現在の書き込みオフセット位置を渡す
       decode->mad_synth.pcm_16bit = &decode_buffer[decode_ofs];
-
-      // バッファオーバーフローの事前チェック
-      // Layer IIIなら最大1152サンプル * 2ch = 2304 samples 分の空きが必要
-      if ((decode_ofs + MAD_MAX_SAMPLES * 2) * sizeof(int16_t) > decode_buffer_bytes) {
-          break; 
-      }
 #endif
 
       mad_synth_frame(&(decode->mad_synth), &(decode->mad_frame));
@@ -457,11 +481,14 @@ int32_t mp3_decode_resample(MP3_DECODE_HANDLE* decode, int16_t* resample_buffer,
   // down sampling counter
   int32_t resample_ofs = 0;
 
+  // down sampling counter limit
+  int32_t resample_ofs_limit = resample_buffer_bytes / sizeof(int16_t);
+
 #ifdef __VERBOSE__
   uint32_t t0 = (_iocs_ontime()).sec;
 #endif
 
-  for (;;) {
+  while ((resample_ofs + MAD_MAX_SAMPLES) < resample_ofs_limit) {
     
     if (decode->current_mad_pcm == NULL) {
 
@@ -498,10 +525,9 @@ int32_t mp3_decode_resample(MP3_DECODE_HANDLE* decode, int16_t* resample_buffer,
     } 
 
     MAD_PCM* pcm = decode->current_mad_pcm;
-    // バッファ溢れチェック（ダウンサンプリング後なので実際はもっと余裕があるはずですが安全のため）
-    if (resample_ofs * sizeof(int16_t) + ( pcm->length * sizeof(int16_t) ) > resample_buffer_bytes) {
-      break;
-    }
+    //if (resample_ofs * sizeof(int16_t) + ( pcm->length * sizeof(int16_t) ) > resample_buffer_bytes) {
+    //  break;
+    //}
 
 #ifdef __OPT_X68K_16BIT_PCM_DIRECT__
     // --- 最適化された16bitソースからのダウンサンプリング ---
