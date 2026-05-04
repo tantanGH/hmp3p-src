@@ -7,7 +7,7 @@ endif
 .SUFFIXES:
 
 # バージョン
-VERSION = 094
+VERSION = 096
 
 # 実行ファイル名
 TARGET_FILE_000 = HMP3P.X
@@ -56,9 +56,9 @@ LDFLAGS = -Wl,-s -Wl,--gc-sections \
 		  -L../libs/libjpeg/lib -L../libs/libmad-x68k/lib
 
 # リンク対象のライブラリファイル
-LIBS_000 = -lcmdline -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpeg -lmadhm
-LIBS_030 = -lcmdline -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpeg -lmad030hm
-LIBS_060 = -lcmdline -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpeg -lmad060hm
+LIBS_000 = -lcmdline -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpegstb    -lm -lmadhm
+LIBS_030 = -lcmdline -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpegstb030 -lm -lmad030hm
+LIBS_060 = -lcmdline -lj -lutf16 -lhimem -lpcm8a -lpcm8pp -ljpegstb060 -lm -lmad060hm
 
 # 中間ファイル生成用ディレクトリ
 INTERMEDIATE_DIR_000 = _build000/elf2x68k
