@@ -75,19 +75,24 @@ void mp3_decode_close(MP3_DECODE_HANDLE* decode) {
 //
 //  setup decode operation
 //
-int32_t mp3_decode_setup(MP3_DECODE_HANDLE* decode, void* mp3_data, size_t mp3_data_len, int16_t mp3_quality) {
+int32_t mp3_decode_setup(MP3_DECODE_HANDLE* decode, void* mp3_data, size_t mp3_data_len, int16_t mp3_quality, size_t continuous_read_len) {
 
   int32_t rc = 0;
 
   // baseline
   decode->mp3_data = mp3_data;
-  decode->mp3_data_len = mp3_data_len;
+  decode->mp3_data_len = mp3_data_len;        // MP3データ全体の長さ
+  decode->mp3_data_pos = 0;                   // MP3データ全体の中での現在位置
   decode->mp3_quality = mp3_quality;
+
+  // continuous read
+  decode->continuous_read_len = continuous_read_len;      // 逐次読み込みバッファに溜まっている長さ
+  decode->continuous_read_pos = 0;                        // 逐次読み込みバッファの中での現在位置
 
   // sampling parameters
   decode->mp3_sample_rate = -1;
   decode->mp3_channels = -1;
-
+  
   // for resampling
   decode->resample_counter = 0;
 
@@ -120,9 +125,26 @@ int32_t mp3_decode_setup(MP3_DECODE_HANDLE* decode, void* mp3_data, size_t mp3_d
   }
 #endif
 
-  mad_stream_buffer(&(decode->mad_stream), mp3_data, mp3_data_len);
+  mad_stream_buffer(&(decode->mad_stream), mp3_data, continuous_read_len);
+  mad_stream_options(&(decode->mad_stream), MAD_OPTION_IGNORECRC);
 
   decode->current_mad_pcm = NULL;
+
+exit:
+  return rc;
+}
+
+//
+//  refresh stream for continuous read
+//
+int32_t mp3_decode_refresh_stream(MP3_DECODE_HANDLE* decode, void* mp3_data, size_t continuous_read_len) {
+
+  int32_t rc = 0;
+
+  mad_stream_buffer(&(decode->mad_stream), mp3_data, continuous_read_len);
+
+  decode->continuous_read_len = continuous_read_len;
+  decode->continuous_read_pos = 0;
 
 exit:
   return rc;
@@ -152,9 +174,6 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
 
   // ID3v2 version
   int16_t id3v2_version = mp3_header[3];
-//  if (id3v2_version < 0x03) {
-//    return total_tag_size + 10;     // does not support ID3v2.2 or before
-//  }
 
   // skip extended ID3v2 header
   if (id3v2_version >= 0x03 && mp3_header[5] & (1<<6)) {
@@ -166,6 +185,9 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
     _dos_seek(fd, ext_header_size, 1);
     total_tag_size -= 6 + ext_header_size;
   }
+
+  // footer exists? (Flagsのbit 4)
+  int has_footer = (mp3_header[5] & (1 << 4));
 
   uint8_t frame_header[10];
   int32_t ofs = 0;
@@ -284,17 +306,8 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
         // jpeg
         JPEG jpg;
         jpeg_open(&jpg, pic_brightness);
-        if (jpeg_draw(&jpg, pic_data, pic_data_len, 0) != 0) {
-//          printf("unsupported jpeg artwork format. (progressive JPEG?)\n");
-        }
+        jpeg_draw(&jpg, pic_data, pic_data_len, 0);
         jpeg_close(&jpg);
-
-//      } else if (pic_data[0] == 0x89 && pic_data[1] == 0x50) {
-//        // png
-//        PNG_DECODE_HANDLE png = { 0 };
-//        png_init(&png, pic_brightness, pic_half_size);
-//        png_load(&png, pic_data, pic_data_len);
-//        png_close(&png);
       }
 
       free(frame_data);
@@ -308,7 +321,7 @@ int32_t mp3_decode_parse_tags(MP3_DECODE_HANDLE* decode, int16_t pic_brightness,
 
   }
 
-  return 10 + total_tag_size;
+  return 10 + total_tag_size + (has_footer ? 10 : 0);
 }
 
 #ifndef __OPT_X68K_16BIT_PCM_DIRECT__
@@ -356,7 +369,7 @@ static inline int16_t scale_12bit(mad_fixed_t sample) {
 //
 //  decode MP3 stream
 //
-int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_t decode_buffer_bytes, size_t* decoded_bytes) {
+int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_t decode_buffer_bytes, size_t* decoded_bytes, SPECTRUM_STREAM_HANDLE* spectrum) {
 
   // default return code
   int32_t rc = -1;
@@ -367,18 +380,11 @@ int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_
   // decode counter limit
   int32_t decode_ofs_limit = decode_buffer_bytes / sizeof(int16_t);
 
-#ifdef __VERBOSE__
-  uint32_t t0 = (_iocs_ontime()).sec;
-  uint32_t td = 0;
-  uint32_t ts = 0;
-#endif
-
   while (decode_ofs < decode_ofs_limit) {
+
+    const uint8_t* current_frame = decode->mad_stream.next_frame;
   
     if (decode->current_mad_pcm == NULL) {
-#ifdef __VERBOSE__
-      uint32_t td0 = (_iocs_ontime()).sec;
-#endif
       int16_t result = mad_frame_decode(&(decode->mad_frame), &(decode->mad_stream));
       if (result == -1) {
         if (decode->mad_stream.error == MAD_ERROR_BUFLEN) {
@@ -393,10 +399,7 @@ int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_
           goto exit;
         }
       }
-#ifdef __VERBOSE__
-      uint32_t td1 = (_iocs_ontime()).sec;
-      td += td1 - td0;
-#endif
+
       decode->mad_frame.options = decode->mp3_frame_options;
 
       // --- 16bit直書き出し最適化 ---
@@ -408,10 +411,9 @@ int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_
 
       mad_synth_frame(&(decode->mad_synth), &(decode->mad_frame));
 
-#ifdef __VERBOSE__
-      uint32_t td2 = (_iocs_ontime()).sec;
-      ts += td2 - td1;
-#endif
+      size_t consumed_bytes = decode->mad_stream.next_frame - current_frame;
+      decode->mp3_data_pos += consumed_bytes;
+      decode->continuous_read_pos += consumed_bytes;
 
 #ifdef __OPT_X68K_16BIT_PCM_DIRECT__
       // synth_fullの中ですでに書き込みは完了しているので、
@@ -429,7 +431,11 @@ int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_
         decode->mp3_sample_rate = decode->mad_synth.pcm.samplerate;
         decode->mp3_channels = decode->mad_synth.pcm.channels;
       }
-
+    
+      if (spectrum != NULL) {
+        if (spectrum->sample_rate < 0) spectrum_stream_set_sample_rate(spectrum, decode->mp3_sample_rate);
+        spectrum_stream_process(spectrum, &(decode_buffer[decode_ofs]), decode->mad_synth.pcm.length);
+      }
     } 
 
 #ifndef __OPT_X68K_16BIT_PCM_DIRECT__
@@ -462,18 +468,13 @@ exit:
   // push resampled count
   *decoded_bytes = decode_ofs * sizeof(int16_t);
 
-#ifdef __VERBOSE__
-  uint32_t t1 = (_iocs_ontime()).sec;
-  printf("%d samples/sec [%d,%d]\n",(int32_t)(decode_ofs * 100.0 / 2.0 / (t1 - t0)),td,ts);
-#endif
-
   return rc;
 }
 
 //
 //  decode MP3 stream with resampling
 //
-int32_t mp3_decode_resample(MP3_DECODE_HANDLE* decode, int16_t* resample_buffer, size_t resample_buffer_bytes, int16_t resample_freq, size_t* resampled_bytes) {
+int32_t mp3_decode_resample(MP3_DECODE_HANDLE* decode, int16_t* resample_buffer, size_t resample_buffer_bytes, int16_t resample_freq, size_t* resampled_bytes, SPECTRUM_STREAM_HANDLE* spectrum) {
 
   // default return code
   int32_t rc = -1;
@@ -484,13 +485,11 @@ int32_t mp3_decode_resample(MP3_DECODE_HANDLE* decode, int16_t* resample_buffer,
   // down sampling counter limit
   int32_t resample_ofs_limit = resample_buffer_bytes / sizeof(int16_t);
 
-#ifdef __VERBOSE__
-  uint32_t t0 = (_iocs_ontime()).sec;
-#endif
-
   while ((resample_ofs + MAD_MAX_SAMPLES) < resample_ofs_limit) {
     
     if (decode->current_mad_pcm == NULL) {
+
+      const uint8_t* current_frame = decode->mad_stream.next_frame;
 
       int16_t result = mad_frame_decode(&(decode->mad_frame), &(decode->mad_stream));
       if (result == -1) {
@@ -516,11 +515,21 @@ int32_t mp3_decode_resample(MP3_DECODE_HANDLE* decode, int16_t* resample_buffer,
 #endif
 
       mad_synth_frame(&(decode->mad_synth), &(decode->mad_frame));
+
+      size_t consumed_bytes = decode->mad_stream.next_frame - current_frame;
+      decode->mp3_data_pos += consumed_bytes;
+      decode->continuous_read_pos += consumed_bytes;
+
       decode->current_mad_pcm = &(decode->mad_synth.pcm);
 
       if (decode->mp3_sample_rate < 0) {
         decode->mp3_sample_rate = decode->current_mad_pcm->samplerate;
         decode->mp3_channels = decode->current_mad_pcm->channels;
+      }
+
+      if (spectrum != NULL) {
+        if (spectrum->sample_rate < 0) spectrum_stream_set_sample_rate(spectrum, decode->mp3_sample_rate);
+        spectrum_stream_process(spectrum, decode->resample_src_buffer, decode->mad_synth.pcm.length);
       }
     } 
 
@@ -579,11 +588,6 @@ int32_t mp3_decode_resample(MP3_DECODE_HANDLE* decode, int16_t* resample_buffer,
 
 exit:
   *resampled_bytes = resample_ofs * sizeof(int16_t);
-
-#ifdef __VERBOSE__
-  uint32_t t1 = (_iocs_ontime()).sec;
-  printf("%d samples/sec\n",(int32_t)(resample_ofs * 100.0 / (t1 - t0)));
-#endif
 
   return rc;
 }

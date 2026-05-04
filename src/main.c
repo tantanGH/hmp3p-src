@@ -25,6 +25,10 @@
 // codec
 #include "mp3_decode.h"
 
+// spectrum analyzer
+#include "spectrum_stream.h"
+#include "spectrum_display.h"
+
 // application
 #include "hmp3p.h"
 
@@ -52,6 +56,17 @@ static uint32_t g_original_pcm8pp_frequency_mode = 0;
 static uint32_t g_original_pcm8pp_max_channels = 0;
 
 //
+//  file read buffer
+//
+static void* fread_buffer = NULL;
+
+//
+//  spectrum analyzer handle
+//
+static SPECTRUM_DISPLAY_HANDLE* g_spectrum_display = NULL;
+static SPECTRUM_STREAM_HANDLE* g_spectrum_stream = NULL;
+
+//
 //  abort vector handler
 //
 static __attribute__((interrupt)) void abort_application() {
@@ -59,6 +74,15 @@ static __attribute__((interrupt)) void abort_application() {
   // resume abort vectors
   if (g_abort_vector1 != NULL) _dos_intvcs(0xFFF1, g_abort_vector1);
   if (g_abort_vector2 != NULL) _dos_intvcs(0xFFF2, g_abort_vector2);  
+  
+  // stop spectrum analyzer
+  if (g_spectrum_display != NULL) {
+    spectrum_display_stop(g_spectrum_display);
+    spectrum_display_close(g_spectrum_display);
+  }
+  if (g_spectrum_stream != NULL) {
+    spectrum_stream_close(g_spectrum_stream);
+  }
 
   // stop pcm8a
   if (pcm8a_isavailable()) {
@@ -102,6 +126,12 @@ static __attribute__((interrupt)) void abort_application() {
       himem_free(pre_rct);
     }
     g_init_chain_table_ex = NULL;
+  }
+
+  // reclaim file read buffer
+  if (fread_buffer != NULL) {
+    himem_free(fread_buffer);
+    fread_buffer = NULL;
   }
 
   // cursor on
@@ -155,8 +185,8 @@ static void show_help_message() {
   printf("     -q<n> ... mp3 quality (0:high, 1:normal, default:0)\n");
   printf("     -t<n> ... album art display brightness (1-100, default:off)\n");
   printf("     -b<n> ... buffer size [x 64KB] (3-32,default:%d)\n", DEFAULT_BUFFERS);
+  printf("     -a[n] ... spectrum analyzer mode (0-%d,default:6)\n", NUM_SPECTRUM_MODES-1);
   printf("     -n    ... no progress bar\n");
-  printf("     -s    ... use main memory for file reading (SCSI disk)\n");
   printf("     -h    ... show help message\n");
 }
 
@@ -176,10 +206,10 @@ int32_t main(int32_t argc_, uint8_t* argv_[]) {
   int16_t num_buffers = DEFAULT_BUFFERS;
   int16_t use_high_memory = 0;
   int16_t playback_driver = DRIVER_NONE;
-  int16_t staging_file_read = 0;
   int16_t pic_brightness = 0;
   int16_t quiet_mode = 0;
-  int16_t debug_mode = 0;
+  int16_t spectrum_analyzer = 0;
+  int16_t spectrum_mode = 0;
 
   // total number of chains
   int32_t num_chains = 0;
@@ -234,12 +264,19 @@ int32_t main(int32_t argc_, uint8_t* argv_[]) {
           show_help_message();
           goto exit;
         }
-      } else if (argv[i][1] == 's') {
-        staging_file_read = 1;
       } else if (argv[i][1] == 'n') {
         quiet_mode = 1;
-      } else if (argv[i][1] == 'd') {
-        debug_mode = 1;
+      } else if (argv[i][1] == 'a') {
+        spectrum_analyzer = 1;
+        if (strlen(argv[i]) == 2) {
+          spectrum_mode = 6;   // default spectrum analyzer mode
+        } else {
+          spectrum_mode = atoi(argv[i]+2);
+          if (spectrum_mode < 0 || spectrum_mode >= NUM_SPECTRUM_MODES) {
+            show_help_message();
+            goto exit;
+          }
+        }
       } else if (argv[i][1] == 't') {
         pic_brightness = atoi(argv[i]+2);
         if (pic_brightness < 0 || pic_brightness > 100 || strlen(argv[i]) < 3) {
@@ -330,6 +367,10 @@ loop:
     jpeg_fill_text_masks();
   }
 
+  if (spectrum_analyzer) {
+    _dos_c_cls_al(); 
+  }
+
   // current chain table entries
   CHAIN_TABLE* cur_chain_table = NULL;
   size_t chain_table_buffer_bytes = CHAIN_TABLE_BUFFER_BYTES;   // no need to adjust because of fixed resampling rate
@@ -342,10 +383,12 @@ loop:
   CHAIN_TABLE_EX* reclaim_chain_table_ex = NULL;
   int32_t reclaim_block_counter = 0;
 
-  // file read buffers
-  void* fread_buffer = NULL;
-  void* fread_staging_buffer = NULL;
+  // file read descriptor
   int32_t fd = -1;
+
+  // spectrum analyzer handles
+  SPECTRUM_STREAM_HANDLE spectrum_stream = { 0 };
+  SPECTRUM_DISPLAY_HANDLE spectrum_display = { 0 };
 
 try:
 
@@ -390,43 +433,24 @@ try:
   }
 
   // read whole mp3 file content into high memory
-  if (staging_file_read) {
-    // use staging buffer on main memory (for SCSI disk)
-    _iocs_b_print(cp932rsc_now_loading);
-    fread_staging_buffer = malloc(FREAD_STAGING_BUFFER_BYTES);   // allocate in main memory
-    if (fread_staging_buffer == NULL) {
-      strcpy(error_mes, cp932rsc_mainmem_shortage);
-      goto catch;
-    }    
-    size_t read_len = 0; 
-    do {
-      size_t len = _dos_read(fd, fread_staging_buffer, FREAD_STAGING_BUFFER_BYTES);
-      memcpy(fread_buffer + read_len, fread_staging_buffer, len);
-      read_len += len;
-    } while (read_len < mp3_data_size);
-    free(fread_staging_buffer);
-    fread_staging_buffer = NULL;
-    _iocs_b_print(cp932rsc_erase_line);
-  } else {
-    // direct load to high memory from VDISK/WindrvXM
-    size_t read_len = 0; 
-    do {
-      size_t read_size = (mp3_data_size - read_len) < FREAD_CHUNK_BYTES ? (mp3_data_size - read_len) : FREAD_CHUNK_BYTES;
-      size_t len = _dos_read(fd, fread_buffer + read_len, read_size);
-      read_len += len;
-    } while (read_len < mp3_data_size);
-  }
-  _dos_close(fd);
-  fd = -1;
+  // direct load to high memory from VDISK/WindrvXM
+//  size_t read_len = 0; 
+//  do {
+//    size_t read_size = (mp3_data_size - read_len) < FREAD_CHUNK_BYTES ? (mp3_data_size - read_len) : FREAD_CHUNK_BYTES;
+//    size_t len = _dos_read(fd, fread_buffer + read_len, read_size);
+//    read_len += len;
+//  } while (read_len < mp3_data_size);
+//  _dos_close(fd);
+//  fd = -1;
 
   // setup mp3 decoder
-  if (mp3_decode_setup(&mp3_decoder, fread_buffer, mp3_data_size, mp3_quality) != 0) {
+  if (mp3_decode_setup(&mp3_decoder, fread_buffer, mp3_data_size, mp3_quality, 0) != 0) {
     strcpy(error_mes, cp932rsc_mp3_decoder_setup_error);
     goto catch;
   }
 
   // describe mp3 attributes
-  if (first_play || pic_brightness > 0) {
+  if (first_play || pic_brightness > 0 || spectrum_analyzer) {
 
     static uint8_t mes[256];
 
@@ -467,6 +491,20 @@ try:
     //first_play = 0;
   }
 
+  // initialize spectrum analyzer if spectrum analyzer mode is enabled
+  if (spectrum_analyzer) {
+    if (spectrum_stream_open(&spectrum_stream, -1, SPECTRUM_SCALE, SPECTRUM_FALL_SPEED) != 0) {
+      strcpy(error_mes, cp932rsc_spectrum_analyzer_init_error);
+      goto catch;
+    }
+    if (spectrum_display_open(&spectrum_display, &spectrum_stream, SPECTRUM_BASE_XPOS, SPECTRUM_BASE_YPOS, spectrum_mode) != 0) {
+      strcpy(error_mes, cp932rsc_spectrum_display_init_error);
+      goto catch;
+    }
+    g_spectrum_stream = &spectrum_stream;
+    g_spectrum_display = &spectrum_display;
+  }
+
   // initial buffering
   int16_t end_flag = 0;
   for (int16_t i = 0; i < num_buffers; i++) {
@@ -478,6 +516,18 @@ try:
     _iocs_b_print(mes);
 
     if (playback_driver == DRIVER_PCM8A) {
+
+      // continuous read
+      size_t remain_len = mp3_decoder.continuous_read_len - mp3_decoder.continuous_read_pos;
+      if (remain_len <= CONTINUOUS_MP3_DRAIN_BYTES) {
+        memcpy(fread_buffer, fread_buffer + mp3_decoder.continuous_read_pos, remain_len);
+        size_t read_size = CONTINUOUS_MP3_INITIAL_BYTES - remain_len;
+        if ((mp3_decoder.mp3_data_len - mp3_decoder.mp3_data_pos) < read_size) {
+          read_size = mp3_decoder.mp3_data_len - mp3_decoder.mp3_data_pos;
+        }
+        size_t len = _dos_read(fd, fread_buffer + remain_len, read_size);
+        mp3_decode_refresh_stream(&mp3_decoder, fread_buffer, remain_len + len);
+      }
 
       // allocate a new chain table entry in high memory
 #ifdef __mc68060__
@@ -504,7 +554,7 @@ try:
 
       // decode mp3 stream into pcm data buffer as much as possible with resampling
       size_t decoded_bytes;
-      if (mp3_decode_resample(&mp3_decoder, ct->buffer, chain_table_buffer_bytes, 15625, &decoded_bytes) != 0) {
+      if (mp3_decode_resample(&mp3_decoder, ct->buffer, chain_table_buffer_bytes, 15625, &decoded_bytes, &spectrum_stream) != 0) {
         strcpy(error_mes, cp932rsc_mp3_decode_error);
         goto catch;      
       }
@@ -544,6 +594,18 @@ try:
 
     if (playback_driver == DRIVER_PCM8PP) {
 
+      // continuous read
+      size_t remain_len = mp3_decoder.continuous_read_len - mp3_decoder.continuous_read_pos;
+      if (remain_len <= CONTINUOUS_MP3_DRAIN_BYTES) {
+        memcpy(fread_buffer, fread_buffer + mp3_decoder.continuous_read_pos, remain_len);
+        size_t read_size = CONTINUOUS_MP3_INITIAL_BYTES - remain_len;
+        if ((mp3_decoder.mp3_data_len - mp3_decoder.mp3_data_pos) < read_size) {
+          read_size = mp3_decoder.mp3_data_len - mp3_decoder.mp3_data_pos;
+        }
+        size_t len = _dos_read(fd, fread_buffer + remain_len, read_size);
+        mp3_decode_refresh_stream(&mp3_decoder, fread_buffer, remain_len + len);
+      }
+
       // allocate a new chain table entry in high memory
 #ifdef __mc68060__
       CHAIN_TABLE_EX* ct = (CHAIN_TABLE_EX*)himem_calloc(sizeof(CHAIN_TABLE_EX), 1);   // zero clear
@@ -569,7 +631,7 @@ try:
 
       // decode mp3 stream into pcm data buffer as much as possible
       size_t decoded_bytes;
-      if (mp3_decode_full(&mp3_decoder, ct->buffer, chain_table_ex_buffer_bytes, &decoded_bytes) != 0) {
+      if (mp3_decode_full(&mp3_decoder, ct->buffer, chain_table_ex_buffer_bytes, &decoded_bytes, &spectrum_stream) != 0) {
         strcpy(error_mes, cp932rsc_mp3_decode_error);
         goto catch;      
       }
@@ -676,16 +738,23 @@ try:
   // make sure playback start
   if (playback_driver == DRIVER_PCM8A) {
     while (pcm8a_get_data_length(0) == 0) {
-      usleep(50000);
+      usleep(10000);
     }
   } else if (playback_driver == DRIVER_PCM8PP) {
     while (pcm8pp_get_data_length(0) == 0) {
-      usleep(50000);
+      usleep(10000);
     }    
   }
   
   int32_t block_counter_ofs = 0;
   int16_t buffer_delta = num_buffers;
+
+  if (spectrum_analyzer) {
+    if (spectrum_display_start(&spectrum_display) != 0) {
+      strcpy(error_mes, cp932rsc_vsync_interrupt_error);
+      goto catch;
+    }
+  }
 
   // main loop for pcm8a
   if (playback_driver == DRIVER_PCM8A) {
@@ -732,6 +801,18 @@ try:
 
       // decode additional data
 
+      // continuous read
+      size_t remain_len = mp3_decoder.continuous_read_len - mp3_decoder.continuous_read_pos;
+      if (remain_len <= CONTINUOUS_MP3_DRAIN_BYTES) {
+        memcpy(fread_buffer, fread_buffer + mp3_decoder.continuous_read_pos, remain_len);
+        size_t read_size = CONTINUOUS_MP3_CONTINUE_BYTES - remain_len;
+        if ((mp3_decoder.mp3_data_len - mp3_decoder.mp3_data_pos) < read_size) {
+          read_size = mp3_decoder.mp3_data_len - mp3_decoder.mp3_data_pos;
+        }
+        size_t len = _dos_read(fd, fread_buffer + remain_len, read_size);
+        mp3_decode_refresh_stream(&mp3_decoder, fread_buffer, remain_len + len);
+      }
+
       // allocate the next chain table entry
 #ifdef __mc68060__
       CHAIN_TABLE* ct = (CHAIN_TABLE*)himem_calloc(sizeof(CHAIN_TABLE), 1);   // zero clear
@@ -757,7 +838,7 @@ try:
 
       // decode mp3 stream into pcm buffer
       size_t decoded_bytes;
-      if (mp3_decode_resample(&mp3_decoder, ct->buffer, chain_table_buffer_bytes, 15625, &decoded_bytes) != 0) {
+      if (mp3_decode_resample(&mp3_decoder, ct->buffer, chain_table_buffer_bytes, 15625, &decoded_bytes, &spectrum_stream) != 0) {
         strcpy(error_mes, cp932rsc_mp3_decode_error);
         goto catch;      
       }
@@ -867,6 +948,18 @@ try:
 
       // decode additional data
 
+      // continuous read
+      size_t remain_len = mp3_decoder.continuous_read_len - mp3_decoder.continuous_read_pos;
+      if (remain_len <= CONTINUOUS_MP3_DRAIN_BYTES) {
+        memcpy(fread_buffer, fread_buffer + mp3_decoder.continuous_read_pos, remain_len);
+        size_t read_size = CONTINUOUS_MP3_CONTINUE_BYTES - remain_len;
+        if ((mp3_decoder.mp3_data_len - mp3_decoder.mp3_data_pos) < read_size) {
+          read_size = mp3_decoder.mp3_data_len - mp3_decoder.mp3_data_pos;
+        }
+        size_t len = _dos_read(fd, fread_buffer + remain_len, read_size);
+        mp3_decode_refresh_stream(&mp3_decoder, fread_buffer, remain_len + len);
+      }
+
       // allocate the next chain table entry
 #ifdef __mc68060__
       CHAIN_TABLE_EX* ct = (CHAIN_TABLE_EX*)himem_calloc(sizeof(CHAIN_TABLE_EX), 1);    // with zero clear
@@ -892,7 +985,7 @@ try:
 
       // decode mp3 stream into pcm buffer
       size_t decoded_bytes;
-      if (mp3_decode_full(&mp3_decoder, ct->buffer, chain_table_ex_buffer_bytes, &decoded_bytes) != 0) {
+      if (mp3_decode_full(&mp3_decoder, ct->buffer, chain_table_ex_buffer_bytes, &decoded_bytes, &spectrum_stream) != 0) {
         strcpy(error_mes, cp932rsc_mp3_decode_error);
         goto catch;      
       }
@@ -977,14 +1070,20 @@ catch:
   }
 
   // reclaim file read buffers
-  if (fread_staging_buffer != NULL) {
-    free(fread_staging_buffer);
-    fread_staging_buffer = NULL;
-  }
-
   if (fread_buffer != NULL) {
     himem_free(fread_buffer);
     fread_buffer = NULL;
+  }
+
+  // close spectrum analyzer
+  if (g_spectrum_display != NULL) {
+    spectrum_display_stop(g_spectrum_display);
+    spectrum_display_close(g_spectrum_display);
+    g_spectrum_display = NULL;
+  }
+  if (g_spectrum_stream != NULL) {
+    spectrum_stream_close(g_spectrum_stream);
+    g_spectrum_stream = NULL;
   }
 
   // close mp3 decoder
