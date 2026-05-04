@@ -1,13 +1,19 @@
 #ifndef __H_HMP3P__
 #define __H_HMP3P__
 
-#define VERSION "0.9.5 (2026/05/04)"
+#define VERSION "0.9.6 (2026/05/04)"
 
 #define MAX_PATH_LEN (256)
 
-#define CONTINUOUS_MP3_BUFFER_BYTES     (2*1024*1024)
-#define CONTINUOUS_MP3_INITIAL_BYTES    (2*1024*1024)
-#define CONTINUOUS_MP3_CONTINUE_BYTES   (512*1024)
+#ifdef __mc68060__
+#define CONTINUOUS_MP3_BUFFER_BYTES     (12*1024*1024)
+#define CONTINUOUS_MP3_INITIAL_BYTES    (12*1024*1024)
+#else
+#define CONTINUOUS_MP3_BUFFER_BYTES     (1*1024*1024)
+#define CONTINUOUS_MP3_INITIAL_BYTES    (256*1024)
+#endif
+
+#define CONTINUOUS_MP3_CONTINUE_BYTES   (256*1024)
 #define CONTINUOUS_MP3_DRAIN_BYTES      (64*1024)
 
 #define MAD_MAX_SAMPLES (1152)
@@ -26,12 +32,6 @@
 #else
 #define DEFAULT_BUFFERS (4)
 #endif
-
-#define NUM_SPECTRUM_MODES  (16)
-#define SPECTRUM_SCALE      (48)
-#define SPECTRUM_FALL_SPEED (1)
-#define SPECTRUM_BASE_XPOS  (10)
-#define SPECTRUM_BASE_YPOS  (240)
 
 //
 //  link array chain table

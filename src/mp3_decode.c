@@ -369,7 +369,7 @@ static inline int16_t scale_12bit(mad_fixed_t sample) {
 //
 //  decode MP3 stream
 //
-int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_t decode_buffer_bytes, size_t* decoded_bytes, SPECTRUM_STREAM_HANDLE* spectrum) {
+int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_t decode_buffer_bytes, size_t* decoded_bytes) {
 
   // default return code
   int32_t rc = -1;
@@ -432,10 +432,6 @@ int32_t mp3_decode_full(MP3_DECODE_HANDLE* decode, int16_t* decode_buffer, size_
         decode->mp3_channels = decode->mad_synth.pcm.channels;
       }
     
-      if (spectrum != NULL) {
-        if (spectrum->sample_rate < 0) spectrum_stream_set_sample_rate(spectrum, decode->mp3_sample_rate);
-        spectrum_stream_process(spectrum, &(decode_buffer[decode_ofs]), decode->mad_synth.pcm.length);
-      }
     } 
 
 #ifndef __OPT_X68K_16BIT_PCM_DIRECT__
@@ -474,7 +470,7 @@ exit:
 //
 //  decode MP3 stream with resampling
 //
-int32_t mp3_decode_resample(MP3_DECODE_HANDLE* decode, int16_t* resample_buffer, size_t resample_buffer_bytes, int16_t resample_freq, size_t* resampled_bytes, SPECTRUM_STREAM_HANDLE* spectrum) {
+int32_t mp3_decode_resample(MP3_DECODE_HANDLE* decode, int16_t* resample_buffer, size_t resample_buffer_bytes, int16_t resample_freq, size_t* resampled_bytes) {
 
   // default return code
   int32_t rc = -1;
@@ -527,10 +523,6 @@ int32_t mp3_decode_resample(MP3_DECODE_HANDLE* decode, int16_t* resample_buffer,
         decode->mp3_channels = decode->current_mad_pcm->channels;
       }
 
-      if (spectrum != NULL) {
-        if (spectrum->sample_rate < 0) spectrum_stream_set_sample_rate(spectrum, decode->mp3_sample_rate);
-        spectrum_stream_process(spectrum, decode->resample_src_buffer, decode->mad_synth.pcm.length);
-      }
     } 
 
     MAD_PCM* pcm = decode->current_mad_pcm;

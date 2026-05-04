@@ -7,7 +7,7 @@ endif
 .SUFFIXES:
 
 # バージョン
-VERSION = 095
+VERSION = 096
 
 # 実行ファイル名
 TARGET_FILE_000 = HMP3P.X
@@ -40,13 +40,13 @@ INCLUDE_FLAGS = -I${ELF2X68K_DIR}/lib/gcc/m68k-elf/13.4.0/include \
 				-I../libs/libmad-x68k/include
 
 # *.c ソースファイル
-C_SRCS = cp932rsc.c mp3_decode.c spectrum_stream.c spectrum_display.c main.c
+C_SRCS = cp932rsc.c mp3_decode.c main.c
 
 # *.s ソースファイル
 ASM_SRCS =
 
 # *.h source files
-HEADER_SRCS = cp932rsc.h mp3_decode.h spectrum_stream.h spectrum_display.h hmp3p.h
+HEADER_SRCS = cp932rsc.h mp3_decode.h hmp3p.h
 
 # リンカオプションおよびライブラリ検索パス
 LDFLAGS = -Wl,-s -Wl,--gc-sections \
