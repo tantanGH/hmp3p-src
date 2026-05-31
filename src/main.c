@@ -947,7 +947,7 @@ try:
       // number of total chains
       num_chains++;
 
-      // in case any buffered chain is consumed, display '*'. Otherwise display '.'.
+      // in case any buffered chain is consumed, display '*'. Otherwise display '>'.
       int32_t block_counter = pcm8pp_get_block_counter(0);
       int32_t dt = num_chains - (block_counter_ofs + block_counter);
       if (dt >= buffer_delta) {
