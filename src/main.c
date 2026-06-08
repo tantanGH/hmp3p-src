@@ -326,6 +326,8 @@ int32_t main(int32_t argc_, uint8_t* argv_[]) {
 
 loop:
 
+  rc = -1;
+
   // init crtc if album art is required
   if (pic_brightness > 0) {
     jpeg_crtmod_768x512_65536();
@@ -617,7 +619,7 @@ try:
     // check shift key to exit
     if (_iocs_b_sftsns() & 0x01) {
       _iocs_b_print(cp932rsc_canceled);
-      goto exit;
+      goto catch;
     }
 
   }
