@@ -465,15 +465,22 @@ try:
     if (playback_driver == DRIVER_PCM8A) {
 
       // continuous read
-      size_t remain_len = mp3_decoder.continuous_read_len - mp3_decoder.continuous_read_pos;
+      int32_t remain_len = mp3_decoder.continuous_read_len - mp3_decoder.continuous_read_pos;
       if (remain_len <= CONTINUOUS_MP3_DRAIN_BYTES) {
         memcpy(fread_buffer, fread_buffer + mp3_decoder.continuous_read_pos, remain_len);
-        size_t read_size = CONTINUOUS_MP3_INITIAL_BYTES - remain_len;
+        int32_t read_size = CONTINUOUS_MP3_INITIAL_BYTES - remain_len;
         if ((mp3_decoder.mp3_data_len - mp3_decoder.mp3_data_pos) < read_size) {
           read_size = mp3_decoder.mp3_data_len - mp3_decoder.mp3_data_pos;
         }
-        size_t len = _dos_read(fd, fread_buffer + remain_len, read_size);
-        mp3_decode_refresh_stream(&mp3_decoder, fread_buffer, remain_len + len);
+        int32_t total_read = _dos_read(fd, fread_buffer + remain_len, read_size);
+        if (total_read > 0 && total_read < read_size) {
+          while (total_read < read_size) {
+            int32_t len = _dos_read(fd, fread_buffer + remain_len + total_read, read_size - total_read);
+            if (len <= 0) break;
+            total_read += len;
+          }
+        }
+        mp3_decode_refresh_stream(&mp3_decoder, fread_buffer, remain_len + total_read);
       }
 
       // allocate a new chain table entry in high memory
@@ -542,15 +549,22 @@ try:
     if (playback_driver == DRIVER_PCM8PP) {
 
       // continuous read
-      size_t remain_len = mp3_decoder.continuous_read_len - mp3_decoder.continuous_read_pos;
+      int32_t remain_len = mp3_decoder.continuous_read_len - mp3_decoder.continuous_read_pos;
       if (remain_len <= CONTINUOUS_MP3_DRAIN_BYTES) {
         memcpy(fread_buffer, fread_buffer + mp3_decoder.continuous_read_pos, remain_len);
-        size_t read_size = CONTINUOUS_MP3_INITIAL_BYTES - remain_len;
+        int32_t read_size = CONTINUOUS_MP3_INITIAL_BYTES - remain_len;
         if ((mp3_decoder.mp3_data_len - mp3_decoder.mp3_data_pos) < read_size) {
           read_size = mp3_decoder.mp3_data_len - mp3_decoder.mp3_data_pos;
         }
-        size_t len = _dos_read(fd, fread_buffer + remain_len, read_size);
-        mp3_decode_refresh_stream(&mp3_decoder, fread_buffer, remain_len + len);
+        int32_t total_read = _dos_read(fd, fread_buffer + remain_len, read_size);
+        if (total_read > 0 && total_read < read_size) {
+          while (total_read < read_size) {
+            int32_t len = _dos_read(fd, fread_buffer + remain_len + total_read, read_size - total_read);
+            if (len <= 0) break;
+            total_read += len;
+          }
+        }
+        mp3_decode_refresh_stream(&mp3_decoder, fread_buffer, remain_len + total_read);
       }
 
       // allocate a new chain table entry in high memory
@@ -742,15 +756,22 @@ try:
       // decode additional data
 
       // continuous read
-      size_t remain_len = mp3_decoder.continuous_read_len - mp3_decoder.continuous_read_pos;
+      int32_t remain_len = mp3_decoder.continuous_read_len - mp3_decoder.continuous_read_pos;
       if (remain_len <= CONTINUOUS_MP3_DRAIN_BYTES) {
         memcpy(fread_buffer, fread_buffer + mp3_decoder.continuous_read_pos, remain_len);
-        size_t read_size = CONTINUOUS_MP3_CONTINUE_BYTES - remain_len;
+        int32_t read_size = CONTINUOUS_MP3_CONTINUE_BYTES - remain_len;
         if ((mp3_decoder.mp3_data_len - mp3_decoder.mp3_data_pos) < read_size) {
           read_size = mp3_decoder.mp3_data_len - mp3_decoder.mp3_data_pos;
         }
-        size_t len = _dos_read(fd, fread_buffer + remain_len, read_size);
-        mp3_decode_refresh_stream(&mp3_decoder, fread_buffer, remain_len + len);
+        int32_t total_read = _dos_read(fd, fread_buffer + remain_len, read_size);
+        if (total_read > 0 && total_read < read_size) {
+          while (total_read < read_size) {
+            int32_t len = _dos_read(fd, fread_buffer + remain_len + total_read, read_size - total_read);
+            if (len <= 0) break;
+            total_read += len;
+          }
+        }
+        mp3_decode_refresh_stream(&mp3_decoder, fread_buffer, remain_len + total_read);
       }
 
       // allocate the next chain table entry
@@ -889,15 +910,22 @@ try:
       // decode additional data
 
       // continuous read
-      size_t remain_len = mp3_decoder.continuous_read_len - mp3_decoder.continuous_read_pos;
+      int32_t remain_len = mp3_decoder.continuous_read_len - mp3_decoder.continuous_read_pos;
       if (remain_len <= CONTINUOUS_MP3_DRAIN_BYTES) {
         memcpy(fread_buffer, fread_buffer + mp3_decoder.continuous_read_pos, remain_len);
-        size_t read_size = CONTINUOUS_MP3_CONTINUE_BYTES - remain_len;
+        int32_t read_size = CONTINUOUS_MP3_CONTINUE_BYTES - remain_len;
         if ((mp3_decoder.mp3_data_len - mp3_decoder.mp3_data_pos) < read_size) {
           read_size = mp3_decoder.mp3_data_len - mp3_decoder.mp3_data_pos;
         }
-        size_t len = _dos_read(fd, fread_buffer + remain_len, read_size);
-        mp3_decode_refresh_stream(&mp3_decoder, fread_buffer, remain_len + len);
+        int32_t total_read = _dos_read(fd, fread_buffer + remain_len, read_size);
+        if (total_read > 0 && total_read < read_size) {
+          while (total_read < read_size) {
+            int32_t len = _dos_read(fd, fread_buffer + remain_len + total_read, read_size - total_read);
+            if (len <= 0) break;
+            total_read += len;
+          }
+        }
+        mp3_decode_refresh_stream(&mp3_decoder, fread_buffer, remain_len + total_read);
       }
 
       // allocate the next chain table entry
